@@ -7,7 +7,7 @@ on:
 
 jobs:
   run-script:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: Checkout code
@@ -21,15 +21,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run script
+      - name: Run Automation Script
         env:
           NAUKRI_EMAIL: ${{ secrets.NAUKRI_EMAIL }}
           NAUKRI_PASSWORD: ${{ secrets.NAUKRI_PASSWORD }}
         run: python naukri.py
 
-      - name: Upload Screenshot
+      - name: Upload Screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: error-screenshot
-          path: error.png
+          name: naukri-screenshots
+          path: screenshots/
