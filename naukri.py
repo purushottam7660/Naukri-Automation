@@ -106,7 +106,7 @@ def get_driver():
 # ==============================
 def login(driver, wait):
     print("[INFO] Opening login page")
-    driver.get("https://www.naukri.com/nlogin/login")
+    driver.get("https://www.naukri.com/")
     time.sleep(4)
     snap(driver, "1_login_page")
 
