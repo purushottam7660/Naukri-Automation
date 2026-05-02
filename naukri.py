@@ -16,7 +16,6 @@ from webdriver_manager.chrome import ChromeDriverManager
 # CONFIG (GitHub Secrets / Local fallback)
 # ==============================
 EMAIL = os.getenv("NAUKRI_EMAIL") or "your_email_here"
-print(EMAIL)
 PASSWORD = os.getenv("NAUKRI_PASSWORD") or "your_password_here"
 print(PASSWORD)
 
@@ -73,7 +72,9 @@ def get_driver():
 # ==============================
 def upload_to_naukri(resume_path):
     driver = get_driver()
-    wait = WebDriverWait(driver, 30)
+    wait = WebDriverWait(driver, 100)
+    print(EMAIL)
+    print(PASSWORD)
 
     try:
         print("🌐 Opening login page...")
