@@ -39,7 +39,7 @@ def generate_resume():
     shutil.copy2(SOURCE_RESUME, path)
     print("✅ Resume ready:", path)
 
-    return os.path.abspath(path)   # 🔥 FIX
+    return os.path.abspath(path)   # ✅ Absolute path fix
 
 # ==============================
 # SETUP DRIVER
@@ -55,9 +55,7 @@ def get_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
 
-    # ======================================
-    # ✅ YOUR USER AGENT (Chrome 147)
-    # ======================================
+    # ✅ Your User-Agent (Chrome 147)
     user_agent = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -66,20 +64,16 @@ def get_driver():
     options.add_argument(f"user-agent={user_agent}")
     print("🧠 Using User-Agent: Chrome 147")
 
-    # ======================================
-    # ✅ PROXY (ONLY IF PROVIDED)
-    # ======================================
+    # ✅ Proxy (only if provided)
     if PROXY:
         print("🌐 Using Proxy:", PROXY)
         options.add_argument(f"--proxy-server={PROXY}")
     else:
         print("🌐 No proxy used")
 
-    # Reduce detection
     options.add_argument("--disable-blink-features=AutomationControlled")
 
     print("🚀 Launching Chrome...")
-
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
 
@@ -109,8 +103,9 @@ def login(driver, wait):
 
     print("🔐 Logging in...")
 
+    # ✅ 2-minute smart wait
     try:
-        wait.until(lambda d: "login" not in d.current_url)
+        wait.until(lambda d: "login" not in d.current_url or "profile" in d.current_url)
         print("✅ Login success")
         return True
     except:
@@ -152,18 +147,21 @@ def main():
     print("📂 Absolute path:", resume_path)
 
     driver = get_driver()
-    wait = WebDriverWait(driver, 25)
+
+    # 🔥 2 MINUTE WAIT
+    wait = WebDriverWait(driver, 120)
 
     try:
         for i in range(2):
             print(f"🔁 Attempt {i+1}")
 
             if login(driver, wait):
+                time.sleep(5)  # small buffer
                 upload_resume(driver, wait, resume_path)
                 break
             else:
                 print("Retrying...")
-                time.sleep(3)
+                time.sleep(5)
 
     except Exception as e:
         print("❌ Error:", e)
