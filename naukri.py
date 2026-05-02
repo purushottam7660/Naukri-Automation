@@ -1,6 +1,7 @@
 import os
 import shutil
 import time
+import random
 from datetime import datetime
 
 from selenium import webdriver
@@ -14,7 +15,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 # ==============================
-# CONFIG (GitHub Secrets)
+# CONFIG
 # ==============================
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
@@ -23,6 +24,14 @@ PROXY = os.getenv("PROXY")  # optional
 SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
 DEST_FOLDER = "Naukri_resume"
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
+
+# ==============================
+# UTIL: Human typing
+# ==============================
+def type_like_human(element, text):
+    for ch in text:
+        element.send_keys(ch)
+        time.sleep(random.uniform(0.05, 0.15))
 
 # ==============================
 # GENERATE RESUME
@@ -39,15 +48,15 @@ def generate_resume():
     shutil.copy2(SOURCE_RESUME, path)
     print("✅ Resume ready:", path)
 
-    return os.path.abspath(path)   # ✅ Absolute path fix
+    return os.path.abspath(path)
 
 # ==============================
-# SETUP DRIVER
+# DRIVER SETUP
 # ==============================
 def get_driver():
     options = Options()
 
-    # 🔴 Required for GitHub
+    # Headless for GitHub; comment this locally for better success
     options.add_argument("--headless=new")
 
     options.add_argument("--no-sandbox")
@@ -55,29 +64,36 @@ def get_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
 
-    # ✅ Your User-Agent (Chrome 147)
-    user_agent = (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    # UA (Chrome 147)
+    options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/147.0.0.0 Safari/537.36"
     )
-    options.add_argument(f"user-agent={user_agent}")
-    print("🧠 Using User-Agent: Chrome 147")
 
-    # ✅ Proxy (only if provided)
+    # Language & headers hints
+    options.add_argument("--lang=en-US,en;q=0.9")
+
+    # Proxy (optional)
     if PROXY:
         print("🌐 Using Proxy:", PROXY)
         options.add_argument(f"--proxy-server={PROXY}")
     else:
         print("🌐 No proxy used")
 
+    # Reduce obvious automation flag
     options.add_argument("--disable-blink-features=AutomationControlled")
 
-    print("🚀 Launching Chrome...")
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
 
-    print("✅ Chrome launched")
+    # Minor webdriver flag reduction
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+        "source": """
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+        """
+    })
+
     return driver
 
 # ==============================
@@ -87,25 +103,43 @@ def login(driver, wait):
     print("🌐 Opening login page...")
     driver.get("https://www.naukri.com/nlogin/login")
 
-    email = wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
-    password = driver.find_element(By.ID, "passwordField")
+    time.sleep(4)
+    print("📄 Page Title:", driver.title)
 
-    email.clear()
-    password.clear()
+    if "Access Denied" in driver.title:
+        print("❌ Blocked page")
+        driver.save_screenshot("blocked.png")
+        return False
 
-    email.send_keys(EMAIL)
-    time.sleep(0.5)
+    try:
+        email = wait.until(EC.element_to_be_clickable((By.ID, "usernameField")))
+        password = wait.until(EC.element_to_be_clickable((By.ID, "passwordField")))
 
-    password.send_keys(PASSWORD)
-    time.sleep(0.5)
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", email)
 
-    password.send_keys(Keys.RETURN)
+        email.clear()
+        type_like_human(email, EMAIL)
+
+        time.sleep(random.uniform(0.5, 1.2))
+
+        password.clear()
+        type_like_human(password, PASSWORD)
+
+        time.sleep(random.uniform(0.5, 1.2))
+        password.send_keys(Keys.RETURN)
+
+    except Exception:
+        print("⚠️ Fallback JS input")
+        driver.execute_script("""
+            document.getElementById('usernameField').value = arguments[0];
+            document.getElementById('passwordField').value = arguments[1];
+        """, EMAIL, PASSWORD)
+        driver.execute_script("document.querySelector('button[type=\"submit\"]').click();")
 
     print("🔐 Logging in...")
 
-    # ✅ 2-minute smart wait
     try:
-        wait.until(lambda d: "login" not in d.current_url or "profile" in d.current_url)
+        wait.until(lambda d: "login" not in d.current_url)
         print("✅ Login success")
         return True
     except:
@@ -114,7 +148,7 @@ def login(driver, wait):
         return False
 
 # ==============================
-# UPLOAD RESUME
+# UPLOAD
 # ==============================
 def upload_resume(driver, wait, resume_path):
     print("📂 Opening profile...")
@@ -124,7 +158,7 @@ def upload_resume(driver, wait, resume_path):
         EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
     )
 
-    print("📤 Uploading:", resume_path)
+    time.sleep(random.uniform(1, 2))
     upload.send_keys(resume_path)
 
     print("🎉 Resume uploaded!")
@@ -139,29 +173,24 @@ def main():
         print("❌ Missing credentials")
         return
 
-    print("🔍 Debug:")
-    print("Email:", EMAIL)
-    print("Password length:", len(PASSWORD))
-
     resume_path = generate_resume()
     print("📂 Absolute path:", resume_path)
 
     driver = get_driver()
-
-    # 🔥 2 MINUTE WAIT
     wait = WebDriverWait(driver, 120)
 
     try:
-        for i in range(2):
-            print(f"🔁 Attempt {i+1}")
+        for attempt in range(3):
+            print(f"🔁 Attempt {attempt+1}")
 
             if login(driver, wait):
-                time.sleep(5)  # small buffer
+                time.sleep(random.uniform(3, 6))
                 upload_resume(driver, wait, resume_path)
                 break
             else:
-                print("Retrying...")
-                time.sleep(5)
+                sleep_time = random.uniform(5, 10)
+                print(f"Retrying after {sleep_time:.1f}s...")
+                time.sleep(sleep_time)
 
     except Exception as e:
         print("❌ Error:", e)
@@ -172,6 +201,5 @@ def main():
         print("🧹 Browser closed")
         print("===== DONE =====")
 
-# ==============================
 if __name__ == "__main__":
     main()
