@@ -122,14 +122,38 @@ def upload_to_naukri(resume_path):
         password_field.send_keys(PASSWORD)
 
         take_screenshot(driver, "03_password_entered")
-
-        password_field.send_keys(Keys.RETURN)
-
-        print("Logging in...")
-
-        time.sleep(5)
-
-        take_screenshot(driver, "04_after_login")
+        
+        login_btn = wait.until(
+            EC.element_to_be_clickable(
+                (
+                    By.XPATH,
+                    "//button[.//span[normalize-space()='Login']]"
+                )
+            )
+        )
+        
+        take_screenshot(driver, "04_login_button_found")
+        
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block:'center'});",
+            login_btn
+        )
+        
+        time.sleep(1)
+        
+        try:
+            login_btn.click()
+        except Exception:
+            driver.execute_script(
+                "arguments[0].click();",
+                login_btn
+            )
+        
+        print("Login button clicked")
+        
+        time.sleep(6)
+        
+        take_screenshot(driver, "05_after_login")
 
         # Open profile page
         driver.get("https://www.naukri.com/mnjuser/profile")
