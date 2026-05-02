@@ -13,10 +13,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 # ==============================
-# CONFIG
+# CONFIG (GitHub Secrets / Local fallback)
 # ==============================
-EMAIL = os.getenv("NAUKRI_EMAIL")
-PASSWORD = os.getenv("NAUKRI_PASSWORD")
+EMAIL = os.getenv("NAUKRI_EMAIL") or "your_email_here"
+print(EMAIL)
+PASSWORD = os.getenv("NAUKRI_PASSWORD") or "your_password_here"
+print(PASSWORD)
 
 SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
 DEST_FOLDER = "Naukri_resume"
@@ -28,44 +30,46 @@ RESUME_PREFIX = "Purushottam_Kumar_Resume"
 def generate_resume():
     os.makedirs(DEST_FOLDER, exist_ok=True)
 
-    current_date = datetime.now().strftime("%d_%b_%Y")
-    new_filename = f"{RESUME_PREFIX}_{current_date}.pdf"
-    destination_path = os.path.join(DEST_FOLDER, new_filename)
+    date = datetime.now().strftime("%d_%b_%Y")
+    new_file = f"{RESUME_PREFIX}_{date}.pdf"
+    path = os.path.join(DEST_FOLDER, new_file)
 
-    if os.path.exists(destination_path):
-        os.remove(destination_path)
+    if os.path.exists(path):
+        os.remove(path)
 
-    shutil.copy2(SOURCE_RESUME, destination_path)
-    print(f"✅ Resume ready: {destination_path}")
+    shutil.copy2(SOURCE_RESUME, path)
+    print("✅ Resume ready:", path)
 
-    return os.path.abspath(destination_path)
+    return os.path.abspath(path)
 
 # ==============================
 # SETUP DRIVER
 # ==============================
 def get_driver():
-    chrome_options = Options()
+    options = Options()
 
-    # ✅ Headless for GitHub
-    chrome_options.add_argument("--headless=new")
+    # 🔹 For GitHub keep this ON
+    options.add_argument("--headless=new")
 
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
+    # 🔹 For LOCAL (better success), comment above line
 
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+
+    options.add_argument("--disable-blink-features=AutomationControlled")
 
     print("🚀 Launching Chrome...")
 
     service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    driver = webdriver.Chrome(service=service, options=options)
 
     print("✅ Chrome launched")
     return driver
 
 # ==============================
-# MAIN AUTOMATION
+# LOGIN + UPLOAD
 # ==============================
 def upload_to_naukri(resume_path):
     driver = get_driver()
@@ -79,19 +83,22 @@ def upload_to_naukri(resume_path):
 
         print("📄 Page Title:", driver.title)
 
-        # Wait for page load
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        # ✅ WAIT until element exists (FIX for null error)
+        print("⏳ Waiting for login fields...")
+        wait.until(lambda d: d.execute_script(
+            "return document.getElementById('usernameField') !== null"
+        ))
+
+        time.sleep(2)
 
         # ==============================
-        # LOGIN USING JS (FIXED)
+        # LOGIN USING JS (STABLE)
         # ==============================
         print("✉️ Setting Email...")
         driver.execute_script(
             "document.getElementById('usernameField').value = arguments[0];",
             EMAIL
         )
-
-        time.sleep(1)
 
         print("🔑 Setting Password...")
         driver.execute_script(
@@ -111,17 +118,17 @@ def upload_to_naukri(resume_path):
         print("📍 Current URL:", driver.current_url)
 
         # ==============================
-        # CHECK LOGIN SUCCESS
+        # CHECK LOGIN
         # ==============================
         if "login" in driver.current_url:
-            print("❌ Login failed (blocked / not filled)")
+            print("❌ Login failed (blocked / wrong / captcha)")
             driver.save_screenshot("error.png")
             return
 
         # ==============================
         # OPEN PROFILE
         # ==============================
-        print("📂 Opening profile page...")
+        print("📂 Opening profile...")
         driver.get("https://www.naukri.com/mnjuser/profile")
 
         time.sleep(5)
@@ -130,11 +137,11 @@ def upload_to_naukri(resume_path):
         # UPLOAD RESUME
         # ==============================
         print("📤 Uploading resume...")
-        upload_input = wait.until(
+        upload = wait.until(
             EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
         )
 
-        upload_input.send_keys(resume_path)
+        upload.send_keys(resume_path)
 
         print("🎉 Resume uploaded successfully!")
 
@@ -149,13 +156,13 @@ def upload_to_naukri(resume_path):
         print("🧹 Browser closed")
 
 # ==============================
-# ENTRY POINT
+# MAIN
 # ==============================
 if __name__ == "__main__":
     print("===== Naukri Automation Started =====")
 
     if not EMAIL or not PASSWORD:
-        print("❌ Missing credentials (check GitHub Secrets)")
+        print("❌ Missing credentials")
         exit(1)
 
     resume_path = generate_resume()
