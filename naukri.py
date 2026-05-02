@@ -18,6 +18,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 # ==============================
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
+PROXY = os.getenv("PROXY")  # optional
 
 SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
 DEST_FOLDER = "Naukri_resume"
@@ -38,16 +39,15 @@ def generate_resume():
     shutil.copy2(SOURCE_RESUME, path)
     print("✅ Resume ready:", path)
 
-    # ✅ IMPORTANT: Absolute path for Selenium
-    return os.path.abspath(path)
+    return os.path.abspath(path)   # 🔥 FIX
 
 # ==============================
-# SETUP DRIVER (GitHub Friendly)
+# SETUP DRIVER
 # ==============================
 def get_driver():
     options = Options()
 
-    # 🔴 MUST for GitHub
+    # 🔴 Required for GitHub
     options.add_argument("--headless=new")
 
     options.add_argument("--no-sandbox")
@@ -55,7 +55,27 @@ def get_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
 
-    # reduce detection
+    # ======================================
+    # ✅ YOUR USER AGENT (Chrome 147)
+    # ======================================
+    user_agent = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/147.0.0.0 Safari/537.36"
+    )
+    options.add_argument(f"user-agent={user_agent}")
+    print("🧠 Using User-Agent: Chrome 147")
+
+    # ======================================
+    # ✅ PROXY (ONLY IF PROVIDED)
+    # ======================================
+    if PROXY:
+        print("🌐 Using Proxy:", PROXY)
+        options.add_argument(f"--proxy-server={PROXY}")
+    else:
+        print("🌐 No proxy used")
+
+    # Reduce detection
     options.add_argument("--disable-blink-features=AutomationControlled")
 
     print("🚀 Launching Chrome...")
@@ -81,6 +101,7 @@ def login(driver, wait):
 
     email.send_keys(EMAIL)
     time.sleep(0.5)
+
     password.send_keys(PASSWORD)
     time.sleep(0.5)
 
@@ -134,7 +155,7 @@ def main():
     wait = WebDriverWait(driver, 25)
 
     try:
-        for i in range(2):  # retry
+        for i in range(2):
             print(f"🔁 Attempt {i+1}")
 
             if login(driver, wait):
