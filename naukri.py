@@ -5,8 +5,7 @@ from datetime import datetime
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options as ChromeOptions
-from selenium.webdriver.edge.options import Options as EdgeOptions
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
@@ -24,6 +23,8 @@ RESUME_PREFIX = "Purushottam_Kumar_Resume"
 
 SCREENSHOT_DIR = "screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
+MAX_LOGIN_ATTEMPTS = 5
 
 
 # ==============================
@@ -57,58 +58,44 @@ def generate_resume():
 
 
 # ==============================
-# FUNCTION: EDGE DRIVER
-# ==============================
-def get_edge_driver():
-    options = EdgeOptions()
-
-    options.add_argument("--headless=new")
-    options.add_argument("--inprivate")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-
-    print("Launching Microsoft Edge...")
-
-    return webdriver.Edge(options=options)
-
-
-# ==============================
 # FUNCTION: CHROME DRIVER
 # ==============================
-def get_chrome_driver():
-    options = ChromeOptions()
+def get_driver():
+    chrome_options = Options()
 
-    options.add_argument("--headless=new")
-    options.add_argument("--incognito")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--incognito")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
     print("Launching Chrome...")
 
-    return webdriver.Chrome(options=options)
+    driver = webdriver.Chrome(options=chrome_options)
+
+    print("Chrome launched successfully")
+
+    return driver
 
 
 # ==============================
-# FUNCTION: FIND LOGIN INPUTS
+# FUNCTION: FIND LOGIN FIELDS
 # ==============================
-def wait_for_login_inputs(driver):
-    wait = WebDriverWait(driver, 40)
+def find_login_fields(driver):
+    wait = WebDriverWait(driver, 25)
 
-    try:
-        wait.until(
-            lambda d: (
-                len(d.find_elements(By.ID, "usernameField")) > 0
-                or len(d.find_elements(By.XPATH, "//input[@type='email']")) > 0
-            )
+    wait.until(
+        lambda d: (
+            len(d.find_elements(By.ID, "usernameField")) > 0
+            or len(d.find_elements(By.XPATH, "//input[@type='email']")) > 0
         )
-    except TimeoutException:
-        take_screenshot(driver, "login_inputs_not_found")
-        raise Exception("Login inputs not found")
+    )
+
+    email_field = None
+    password_field = None
 
     email_candidates = [
         (By.ID, "usernameField"),
@@ -119,9 +106,6 @@ def wait_for_login_inputs(driver):
         (By.ID, "passwordField"),
         (By.XPATH, "//input[@type='password']")
     ]
-
-    email_field = None
-    password_field = None
 
     for by, value in email_candidates:
         elems = driver.find_elements(by, value)
@@ -136,83 +120,147 @@ def wait_for_login_inputs(driver):
             break
 
     if not email_field or not password_field:
-        take_screenshot(driver, "login_fields_missing")
         raise Exception("Login fields not found")
 
     return email_field, password_field
 
 
 # ==============================
-# FUNCTION: CLICK EXACT LOGIN
+# FUNCTION: FIND LOGIN BUTTON
 # ==============================
-def click_real_login_button(driver):
+def find_login_button(driver):
     buttons = driver.find_elements(By.XPATH, "//button[@type='submit']")
 
     for btn in buttons:
         try:
-            text = btn.text.strip()
-
-            if text == "Login":
-                driver.execute_script(
-                    "arguments[0].scrollIntoView({block:'center'});",
-                    btn
-                )
-
-                time.sleep(1)
-
-                driver.execute_script(
-                    "arguments[0].click();",
-                    btn
-                )
-
-                print("Clicked exact Login button")
-                return True
-
+            if btn.text.strip() == "Login":
+                return btn
         except Exception:
             continue
+
+    return None
+
+
+# ==============================
+# FUNCTION: CLICK LOGIN DIFFERENT WAYS
+# ==============================
+def click_login(driver, login_btn, attempt):
+    driver.execute_script(
+        "arguments[0].scrollIntoView({block:'center'});",
+        login_btn
+    )
+
+    time.sleep(1)
+
+    if attempt == 1:
+        login_btn.click()
+
+    elif attempt == 2:
+        driver.execute_script("arguments[0].click();", login_btn)
+
+    elif attempt == 3:
+        driver.execute_script(
+            """
+            var btn = arguments[0];
+            btn.dispatchEvent(new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                view: window
+            }));
+            """,
+            login_btn
+        )
+
+    elif attempt == 4:
+        driver.execute_script(
+            """
+            arguments[0].focus();
+            arguments[0].click();
+            """,
+            login_btn
+        )
+
+    else:
+        driver.execute_script("arguments[0].click();", login_btn)
+
+
+# ==============================
+# FUNCTION: CHECK LOGIN SUCCESS
+# ==============================
+def login_success(driver):
+    url = driver.current_url.lower()
+
+    if "login" not in url:
+        return True
+
+    if "profile" in url:
+        return True
 
     return False
 
 
 # ==============================
-# FUNCTION: LOGIN
+# FUNCTION: LOGIN WITH RETRIES
 # ==============================
-def login_to_naukri(driver, browser_name):
-    print(f"Opening Naukri login using {browser_name}...")
+def login_to_naukri(driver):
+    for attempt in range(1, MAX_LOGIN_ATTEMPTS + 1):
+        print(f"Login attempt {attempt}")
 
-    driver.get("https://www.naukri.com/nlogin/login")
+        driver.get("https://www.naukri.com/nlogin/login")
 
-    time.sleep(5)
+        time.sleep(5)
 
-    take_screenshot(driver, f"{browser_name}_01_login_page")
+        take_screenshot(driver, f"attempt_{attempt}_01_login_page")
 
-    email_field, password_field = wait_for_login_inputs(driver)
+        try:
+            email_field, password_field = find_login_fields(driver)
 
-    email_field.clear()
-    email_field.send_keys(EMAIL)
+            email_field.clear()
+            email_field.send_keys(EMAIL)
 
-    take_screenshot(driver, f"{browser_name}_02_email_entered")
+            take_screenshot(driver, f"attempt_{attempt}_02_email")
 
-    password_field.clear()
-    password_field.send_keys(PASSWORD)
+            password_field.clear()
+            password_field.send_keys(PASSWORD)
 
-    take_screenshot(driver, f"{browser_name}_03_password_entered")
+            take_screenshot(driver, f"attempt_{attempt}_03_password")
 
-    time.sleep(2)
+            time.sleep(2)
 
-    if not click_real_login_button(driver):
-        take_screenshot(driver, f"{browser_name}_login_button_missing")
-        raise Exception("Login button not found")
+            login_btn = find_login_button(driver)
 
-    time.sleep(6)
+            if not login_btn:
+                raise Exception("Login button not found")
 
-    take_screenshot(driver, f"{browser_name}_04_after_login")
+            click_login(driver, login_btn, attempt)
+
+            print("Login clicked")
+
+            time.sleep(8)
+
+            take_screenshot(driver, f"attempt_{attempt}_04_after_click")
+
+            if login_success(driver):
+                print("Login successful")
+                return True
+
+            print("Login not completed, retrying...")
+
+        except TimeoutException:
+            print("Timeout during login attempt")
+
+        except Exception as e:
+            print("Login attempt failed:", e)
+
+        time.sleep(3)
+
+    raise Exception("Unable to login after retries")
 
 
 # ==============================
 # FUNCTION: UPLOAD RESUME
 # ==============================
-def upload_resume(driver, browser_name, resume_path):
+def upload_resume(driver, resume_path):
     print("Opening profile page...")
 
     driver.get("https://www.naukri.com/mnjuser/profile")
@@ -221,7 +269,7 @@ def upload_resume(driver, browser_name, resume_path):
 
     time.sleep(4)
 
-    take_screenshot(driver, f"{browser_name}_05_profile_page")
+    take_screenshot(driver, "05_profile_page")
 
     upload_input = wait.until(
         EC.presence_of_element_located(
@@ -229,50 +277,35 @@ def upload_resume(driver, browser_name, resume_path):
         )
     )
 
+    take_screenshot(driver, "06_upload_input")
+
     upload_input.send_keys(resume_path)
 
     time.sleep(4)
 
-    take_screenshot(driver, f"{browser_name}_06_resume_uploaded")
+    take_screenshot(driver, "07_resume_uploaded")
 
     print("Resume uploaded successfully")
-
-
-# ==============================
-# FUNCTION: RUN ONE BROWSER
-# ==============================
-def run_browser(driver_factory, browser_name, resume_path):
-    driver = driver_factory()
-
-    try:
-        take_screenshot(driver, f"{browser_name}_00_started")
-
-        login_to_naukri(driver, browser_name)
-
-        upload_resume(driver, browser_name, resume_path)
-
-        take_screenshot(driver, f"{browser_name}_07_final")
-
-        return True
-
-    finally:
-        driver.quit()
-        print(f"{browser_name} closed")
 
 
 # ==============================
 # FUNCTION: MAIN FLOW
 # ==============================
 def upload_to_naukri(resume_path):
+    driver = get_driver()
+
     try:
-        print("Trying Microsoft Edge first...")
-        return run_browser(get_edge_driver, "edge", resume_path)
+        take_screenshot(driver, "00_browser_started")
 
-    except Exception as e:
-        print("Edge skipped/failed:", e)
+        login_to_naukri(driver)
 
-    print("Retrying with Chrome...")
-    return run_browser(get_chrome_driver, "chrome", resume_path)
+        upload_resume(driver, resume_path)
+
+        take_screenshot(driver, "08_final_state")
+
+    finally:
+        driver.quit()
+        print("Browser closed")
 
 
 # ==============================
