@@ -20,6 +20,14 @@ sys.stdout.reconfigure(encoding="utf-8")
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
 
+# explicit proxy or system proxy env
+PROXY = (
+    os.getenv("PROXY")
+    or os.getenv("HTTPS_PROXY")
+    or os.getenv("HTTP_PROXY")
+    or ""
+).strip()
+
 SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
 DEST_FOLDER = "Naukri_resume"
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
@@ -31,6 +39,12 @@ PROFILE_DIR = os.path.abspath("playwright_profile")
 
 HOME_URL = "https://www.naukri.com/"
 PROFILE_URL = "https://www.naukri.com/mnjuser/profile"
+
+WINDOWS_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/147.0.0.0 Safari/537.36"
+)
 
 
 # ==========================================
@@ -87,7 +101,7 @@ def safe_open(page, url):
 
 
 # ==========================================
-# CHECK SESSION
+# CHECK LOGIN
 # ==========================================
 def already_logged_in(page):
     if not safe_open(page, PROFILE_URL):
@@ -190,21 +204,31 @@ def main():
 
     resume_path = generate_resume()
 
+    launch_kwargs = {
+        "headless": True,
+        "args": [
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+        ],
+    }
+
+    if PROXY:
+        print("[INFO] Using proxy:", PROXY)
+        launch_kwargs["proxy"] = {"server": PROXY}
+    else:
+        print("[INFO] No proxy configured, using direct/system network")
+
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=PROFILE_DIR,
-            headless=True,
+        browser = p.chromium.launch(**launch_kwargs)
+
+        context = browser.new_context(
             viewport={
                 "width": 1920,
                 "height": 1080
             },
             locale="en-US",
-            args=[
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-                "--disable-gpu",
-                "--disable-http2"
-            ]
+            user_agent=WINDOWS_UA,
+            storage_state=PROFILE_DIR if os.path.exists(PROFILE_DIR) else None
         )
 
         page = context.new_page()
@@ -214,9 +238,9 @@ def main():
 
             if already_logged_in(page):
                 upload_resume(page, resume_path)
-
             else:
                 if login(page):
+                    context.storage_state(path=PROFILE_DIR)
                     upload_resume(page, resume_path)
                 else:
                     print("[ERROR] Could not login")
@@ -231,6 +255,7 @@ def main():
 
         finally:
             context.close()
+            browser.close()
 
     print("===== DONE =====")
 
