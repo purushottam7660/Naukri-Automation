@@ -37,7 +37,7 @@ RESUME_PREFIX = "Purushottam_Kumar_Resume"
 SCREENSHOT_DIR = "screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
-HOME_URL = "https://www.naukri.com/"
+HOME_URL = "https://www.naukri.com/nlogin/login"
 PROFILE_URL = "https://www.naukri.com/mnjuser/profile"
 
 
