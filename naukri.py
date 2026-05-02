@@ -175,14 +175,21 @@ def login(driver, wait):
 
         login_btn = None
 
-        # 1st: primary selector
+        # ==========================
+        # 1st: Blue UI login button (latest UI)
+        # ==========================
         try:
-            login_btn = driver.find_element(By.CSS_SELECTOR, "button.btn-primary.loginButton")
-            print("[INFO] Found primary login button")
+            login_btn = driver.find_element(
+                By.CSS_SELECTOR,
+                "button.waves-effect.waves-light.btn-large.btn-block.btn-bold.blue-btn.textTransform"
+            )
+            print("[INFO] Found blue UI login button")
         except:
-            print("[WARN] Primary login button not found")
-
-        # 2nd: text-based fallback
+            print("[WARN] Blue UI login button not found")
+        
+        # ==========================
+        # 2nd: Text-based fallback
+        # ==========================
         if not login_btn:
             try:
                 login_btn = driver.find_element(
@@ -192,17 +199,33 @@ def login(driver, wait):
                 print("[INFO] Found text-based login button")
             except:
                 print("[WARN] Text-based login button not found")
-
-        # 3rd: provided alternate selector
+        
+        # ==========================
+        # 3rd: Primary selector (old UI)
+        # ==========================
         if not login_btn:
             try:
                 login_btn = driver.find_element(
                     By.CSS_SELECTOR,
-                    "button.waves-effect.waves-light.btn-large.btn-block.btn-bold.blue-btn.textTransform"
+                    "button.btn-primary.loginButton"
                 )
-                print("[INFO] Found blue UI login button")
+                print("[INFO] Found primary login button")
             except:
-                print("[ERROR] No login button found")
+                print("[WARN] Primary login button not found")
+
+# ==========================
+# CLICK SAFELY
+# ==========================
+if login_btn:
+    try:
+        # driver.execute_script("arguments[0].scrollIntoView(true);", login_btn)
+        login_btn.click()
+        print("[SUCCESS] Login button clicked")
+    except:
+        print("[WARN] Normal click failed, trying JS click")
+        driver.execute_script("arguments[0].click();", login_btn)
+else:
+    print("[ERROR] No login button found in any selector")
 
         # CLICK SAFELY
         if login_btn:
