@@ -333,7 +333,7 @@ def main():
 
     finally:
         driver.quit()
-        print("===== DONE =====)
+        print("===== DONE =====")
 
 
 if __name__ == "__main__":
