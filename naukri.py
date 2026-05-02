@@ -11,6 +11,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 
 from webdriver_manager.chrome import ChromeDriverManager
 
@@ -50,7 +51,7 @@ def snap(driver, name):
 
 
 # ==========================================
-# HUMAN TYPING
+# HUMAN TYPE
 # ==========================================
 def type_like_human(element, text):
     for ch in text:
@@ -85,6 +86,8 @@ def generate_resume():
 def get_driver():
     options = Options()
 
+    options.page_load_strategy = "eager"
+
     options.add_argument("--headless=new")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-dev-shm-usage")
@@ -92,6 +95,9 @@ def get_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-http2")
     options.add_argument("--lang=en-US,en")
+
+    # reduce heavy rendering
+    options.add_argument("--blink-settings=imagesEnabled=false")
 
     if PROXY:
         options.add_argument(f"--proxy-server={PROXY}")
@@ -103,7 +109,6 @@ def get_driver():
         options=options
     )
 
-    # Use actual browser version
     browser_version = driver.capabilities.get("browserVersion", "")
     major = browser_version.split(".")[0]
 
@@ -121,7 +126,7 @@ def get_driver():
     print("[INFO] Browser version:", browser_version)
     print("[INFO] User-Agent:", real_ua)
 
-    driver.set_page_load_timeout(60)
+    driver.set_page_load_timeout(20)
 
     return driver
 
@@ -133,6 +138,17 @@ def open_url(driver, url):
     try:
         driver.get(url)
         return True
+
+    except TimeoutException:
+        print("[WARN] Page load timeout, stopping load")
+
+        try:
+            driver.execute_script("window.stop();")
+            time.sleep(2)
+            return True
+        except Exception:
+            return False
+
     except Exception as e:
         print("[ERROR] Open failed:", e)
         return False
@@ -145,7 +161,7 @@ def already_logged_in(driver):
     if not open_url(driver, PROFILE_URL):
         return False
 
-    time.sleep(4)
+    time.sleep(3)
 
     if "login" not in driver.current_url.lower():
         print("[INFO] Already logged in")
@@ -163,7 +179,7 @@ def login(driver, wait):
     if not open_url(driver, HOME_URL):
         return False
 
-    time.sleep(4)
+    time.sleep(3)
     snap(driver, "1_home")
 
     try:
@@ -210,8 +226,6 @@ def login(driver, wait):
         time.sleep(1)
         login_btn.click()
 
-        print("[INFO] Login clicked")
-
     except Exception as e:
         print("[ERROR] Login failed:", e)
         snap(driver, "login_error")
@@ -230,7 +244,6 @@ def login(driver, wait):
         print("[SUCCESS] Login successful")
         return True
 
-    print("[ERROR] Login failed")
     return False
 
 
@@ -243,7 +256,7 @@ def upload_resume(driver, wait, resume_path):
     if not open_url(driver, PROFILE_URL):
         return False
 
-    time.sleep(5)
+    time.sleep(4)
     snap(driver, "4_profile")
 
     try:
@@ -264,9 +277,6 @@ def upload_resume(driver, wait, resume_path):
         time.sleep(1)
         update_btn.click()
 
-        time.sleep(2)
-        snap(driver, "5_popup")
-
         upload = wait.until(
             EC.presence_of_element_located(
                 (
@@ -279,7 +289,7 @@ def upload_resume(driver, wait, resume_path):
         upload.send_keys(resume_path)
 
         time.sleep(4)
-        snap(driver, "6_uploaded")
+        snap(driver, "5_uploaded")
 
         print("[SUCCESS] Resume uploaded")
         return True
@@ -303,7 +313,7 @@ def main():
     resume_path = generate_resume()
 
     driver = get_driver()
-    wait = WebDriverWait(driver, 40)
+    wait = WebDriverWait(driver, 25)
 
     try:
         snap(driver, "start")
@@ -323,7 +333,7 @@ def main():
 
     finally:
         driver.quit()
-        print("===== DONE =====")
+        print("===== DONE =====)
 
 
 if __name__ == "__main__":
