@@ -72,12 +72,6 @@ def get_driver():
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
-    chrome_options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/148.0.0.0 Safari/537.36"
-    )
-
     print("Launching Chrome...")
 
     driver = webdriver.Chrome(options=chrome_options)
@@ -85,6 +79,38 @@ def get_driver():
     print("Chrome launched successfully")
 
     return driver
+
+
+# ==============================
+# FUNCTION: CLICK REAL LOGIN BUTTON
+# ==============================
+def click_real_login_button(driver):
+    buttons = driver.find_elements(By.XPATH, "//button[@type='submit']")
+
+    for btn in buttons:
+        try:
+            text = btn.text.strip()
+
+            if text == "Login":
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});",
+                    btn
+                )
+
+                time.sleep(1)
+
+                driver.execute_script(
+                    "arguments[0].click();",
+                    btn
+                )
+
+                print("Clicked exact Login button")
+                return True
+
+        except Exception:
+            continue
+
+    return False
 
 
 # ==============================
@@ -103,14 +129,12 @@ def login_to_naukri(driver, wait):
         EC.presence_of_element_located((By.ID, "usernameField"))
     )
 
-    # Email
     email_field = driver.find_element(By.ID, "usernameField")
     email_field.clear()
     email_field.send_keys(EMAIL)
 
     take_screenshot(driver, "02_email_entered")
 
-    # Password
     password_field = driver.find_element(By.ID, "passwordField")
     password_field.clear()
     password_field.send_keys(PASSWORD)
@@ -119,31 +143,10 @@ def login_to_naukri(driver, wait):
 
     time.sleep(2)
 
-    # exact Login button, not OTP button
-    login_btn = wait.until(
-        EC.element_to_be_clickable(
-            (
-                By.XPATH,
-                "//button[normalize-space()='Login' and not(contains(@class,'otpButton'))]"
-            )
-        )
-    )
+    take_screenshot(driver, "04_before_login_click")
 
-    driver.execute_script(
-        "arguments[0].scrollIntoView({block:'center'});",
-        login_btn
-    )
-
-    time.sleep(1)
-
-    take_screenshot(driver, "04_login_button_found")
-
-    driver.execute_script(
-        "arguments[0].click();",
-        login_btn
-    )
-
-    print("Login button clicked")
+    if not click_real_login_button(driver):
+        raise Exception("Exact Login button not found")
 
     time.sleep(6)
 
