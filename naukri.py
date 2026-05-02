@@ -2,18 +2,9 @@ import os
 import sys
 import shutil
 import time
-import random
 from datetime import datetime
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
-
-from webdriver_manager.chrome import ChromeDriverManager
+from playwright.sync_api import sync_playwright, TimeoutError
 
 
 # ==========================================
@@ -28,7 +19,6 @@ sys.stdout.reconfigure(encoding="utf-8")
 # ==========================================
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
-PROXY = os.getenv("PROXY", "").strip()
 
 SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
 DEST_FOLDER = "Naukri_resume"
@@ -37,26 +27,19 @@ RESUME_PREFIX = "Purushottam_Kumar_Resume"
 SCREENSHOT_DIR = "screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
-HOME_URL = "https://www.naukri.com/nlogin/login"
+STATE_FILE = "naukri_state.json"
+
+HOME_URL = "https://www.naukri.com/"
 PROFILE_URL = "https://www.naukri.com/mnjuser/profile"
 
 
 # ==========================================
 # SCREENSHOT
 # ==========================================
-def snap(driver, name):
+def snap(page, name):
     path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
-    driver.save_screenshot(path)
+    page.screenshot(path=path, full_page=True)
     print("[SCREENSHOT]", path)
-
-
-# ==========================================
-# HUMAN TYPE
-# ==========================================
-def type_like_human(element, text):
-    for ch in text:
-        element.send_keys(ch)
-        time.sleep(random.uniform(0.05, 0.12))
 
 
 # ==========================================
@@ -81,89 +64,38 @@ def generate_resume():
 
 
 # ==========================================
-# DRIVER
+# OPEN PAGE
 # ==========================================
-def get_driver():
-    options = Options()
-
-    options.page_load_strategy = "eager"
-
-    options.add_argument("--headless=new")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-http2")
-    options.add_argument("--lang=en-US,en")
-
-    # reduce heavy rendering
-    options.add_argument("--blink-settings=imagesEnabled=false")
-
-    if PROXY:
-        options.add_argument(f"--proxy-server={PROXY}")
-
-    service = Service(ChromeDriverManager().install())
-
-    driver = webdriver.Chrome(
-        service=service,
-        options=options
-    )
-
-    browser_version = driver.capabilities.get("browserVersion", "")
-    major = browser_version.split(".")[0]
-
-    real_ua = (
-        f"Mozilla/5.0 (X11; Linux x86_64) "
-        f"AppleWebKit/537.36 (KHTML, like Gecko) "
-        f"Chrome/{major}.0.0.0 Safari/537.36"
-    )
-
-    driver.execute_cdp_cmd(
-        "Network.setUserAgentOverride",
-        {"userAgent": real_ua}
-    )
-
-    print("[INFO] Browser version:", browser_version)
-    print("[INFO] User-Agent:", real_ua)
-
-    driver.set_page_load_timeout(20)
-
-    return driver
-
-
-# ==========================================
-# SAFE OPEN
-# ==========================================
-def open_url(driver, url):
+def safe_open(page, url):
     try:
-        driver.get(url)
+        page.goto(
+            url,
+            wait_until="domcontentloaded",
+            timeout=30000
+        )
         return True
 
-    except TimeoutException:
-        print("[WARN] Page load timeout, stopping load")
+    except Exception as e:
+        print("[WARN] open failed:", e)
 
         try:
-            driver.execute_script("window.stop();")
+            page.evaluate("window.stop()")
             time.sleep(2)
             return True
         except Exception:
             return False
 
-    except Exception as e:
-        print("[ERROR] Open failed:", e)
-        return False
-
 
 # ==========================================
-# CHECK LOGIN
+# CHECK SESSION
 # ==========================================
-def already_logged_in(driver):
-    if not open_url(driver, PROFILE_URL):
+def already_logged_in(page):
+    if not safe_open(page, PROFILE_URL):
         return False
 
     time.sleep(3)
 
-    if "login" not in driver.current_url.lower():
+    if "login" not in page.url.lower():
         print("[INFO] Already logged in")
         return True
 
@@ -173,130 +105,81 @@ def already_logged_in(driver):
 # ==========================================
 # LOGIN
 # ==========================================
-def login(driver, wait):
+def login(page):
     print("[INFO] Opening home page")
 
-    if not open_url(driver, HOME_URL):
+    if not safe_open(page, HOME_URL):
         return False
 
     time.sleep(3)
-    snap(driver, "1_home")
+    snap(page, "1_home")
 
     try:
-        login_link = wait.until(
-            EC.element_to_be_clickable(
-                (
-                    By.XPATH,
-                    "//a[contains(., 'Login')]"
-                )
-            )
-        )
+        page.locator("text=Login").first.click(timeout=15000)
 
-        login_link.click()
+        page.locator("#usernameField").fill(EMAIL)
+        page.locator("#passwordField").fill(PASSWORD)
 
-        email = wait.until(
-            EC.element_to_be_clickable(
-                (By.ID, "usernameField")
-            )
-        )
+        snap(page, "2_credentials")
 
-        password = wait.until(
-            EC.element_to_be_clickable(
-                (By.ID, "passwordField")
-            )
-        )
+        page.locator("button:has-text('Login')").click()
 
-        email.clear()
-        type_like_human(email, EMAIL)
+        print("[INFO] Login clicked")
 
-        password.clear()
-        type_like_human(password, PASSWORD)
-
-        snap(driver, "2_credentials")
-
-        login_btn = wait.until(
-            EC.element_to_be_clickable(
-                (
-                    By.XPATH,
-                    "//button[contains(., 'Login')]"
-                )
-            )
-        )
-
-        time.sleep(1)
-        login_btn.click()
+    except TimeoutError as e:
+        print("[ERROR] Login timeout:", e)
+        snap(page, "login_timeout")
+        return False
 
     except Exception as e:
         print("[ERROR] Login failed:", e)
-        snap(driver, "login_error")
+        snap(page, "login_error")
         return False
 
     time.sleep(6)
-    snap(driver, "3_after_login")
+    snap(page, "3_after_login")
 
-    page = driver.page_source.lower()
+    html = page.content().lower()
 
-    if "otp" in page:
+    if "otp" in html:
         print("[ERROR] OTP triggered")
         return False
 
-    if "login" not in driver.current_url.lower():
+    if "login" not in page.url.lower():
         print("[SUCCESS] Login successful")
         return True
 
+    print("[ERROR] Login failed")
     return False
 
 
 # ==========================================
 # UPLOAD
 # ==========================================
-def upload_resume(driver, wait, resume_path):
+def upload_resume(page, resume_path):
     print("[INFO] Opening profile")
 
-    if not open_url(driver, PROFILE_URL):
+    if not safe_open(page, PROFILE_URL):
         return False
 
     time.sleep(4)
-    snap(driver, "4_profile")
+    snap(page, "4_profile")
 
     try:
-        update_btn = wait.until(
-            EC.element_to_be_clickable(
-                (
-                    By.XPATH,
-                    "//span[contains(text(),'Update resume')]"
-                )
-            )
-        )
+        page.locator("text=Update resume").click(timeout=15000)
 
-        driver.execute_script(
-            "arguments[0].scrollIntoView(true);",
-            update_btn
-        )
-
-        time.sleep(1)
-        update_btn.click()
-
-        upload = wait.until(
-            EC.presence_of_element_located(
-                (
-                    By.XPATH,
-                    "//input[@type='file']"
-                )
-            )
-        )
-
-        upload.send_keys(resume_path)
+        file_input = page.locator("input[type='file']")
+        file_input.set_input_files(resume_path)
 
         time.sleep(4)
-        snap(driver, "5_uploaded")
+        snap(page, "5_uploaded")
 
         print("[SUCCESS] Resume uploaded")
         return True
 
     except Exception as e:
         print("[ERROR] Upload failed:", e)
-        snap(driver, "upload_error")
+        snap(page, "upload_error")
         return False
 
 
@@ -312,28 +195,58 @@ def main():
 
     resume_path = generate_resume()
 
-    driver = get_driver()
-    wait = WebDriverWait(driver, 25)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+                "--disable-gpu",
+                "--disable-http2"
+            ]
+        )
 
-    try:
-        snap(driver, "start")
+        context_args = {
+            "viewport": {
+                "width": 1920,
+                "height": 1080
+            },
+            "locale": "en-US"
+        }
 
-        if already_logged_in(driver):
-            upload_resume(driver, wait, resume_path)
-            return
+        if os.path.exists(STATE_FILE):
+            context_args["storage_state"] = STATE_FILE
 
-        if login(driver, wait):
-            upload_resume(driver, wait, resume_path)
-        else:
-            print("[ERROR] Could not login")
+        context = browser.new_context(**context_args)
 
-    except Exception as e:
-        print("[FATAL]", e)
-        snap(driver, "fatal_error")
+        page = context.new_page()
 
-    finally:
-        driver.quit()
-        print("===== DONE =====")
+        try:
+            snap(page, "start")
+
+            if already_logged_in(page):
+                upload_resume(page, resume_path)
+
+            else:
+                if login(page):
+                    context.storage_state(path=STATE_FILE)
+                    upload_resume(page, resume_path)
+                else:
+                    print("[ERROR] Could not login")
+
+        except Exception as e:
+            print("[FATAL]", e)
+
+            try:
+                snap(page, "fatal_error")
+            except Exception:
+                pass
+
+        finally:
+            context.close()
+            browser.close()
+
+    print("===== DONE =====")
 
 
 if __name__ == "__main__":
