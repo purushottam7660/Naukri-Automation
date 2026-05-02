@@ -1,264 +1,148 @@
 import os
-import sys
 import shutil
 import time
 from datetime import datetime
+import os
 
-from playwright.sync_api import sync_playwright
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
+# ==============================
+# USER CONFIGURATION
+# ==============================
 
-# ==========================================
-# UTF-8
-# ==========================================
-os.environ["PYTHONIOENCODING"] = "utf-8"
-sys.stdout.reconfigure(encoding="utf-8")
-
-
-# ==========================================
-# CONFIG
-# ==========================================
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
 
-# explicit proxy or system proxy env
-PROXY = (
-    os.getenv("PROXY")
-    or os.getenv("HTTPS_PROXY")
-    or os.getenv("HTTP_PROXY")
-    or ""
-).strip()
+
 
 SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
 DEST_FOLDER = "Naukri_resume"
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
 
-SCREENSHOT_DIR = "screenshots"
-os.makedirs(SCREENSHOT_DIR, exist_ok=True)
-
-PROFILE_DIR = os.path.abspath("playwright_profile")
-
-HOME_URL = "https://www.naukri.com/"
-PROFILE_URL = "https://www.naukri.com/mnjuser/profile"
-
-WINDOWS_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/147.0.0.0 Safari/537.36"
-)
-
-
-# ==========================================
-# SCREENSHOT
-# ==========================================
-def snap(page, name):
-    path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
-    page.screenshot(path=path, full_page=True)
-    print("[SCREENSHOT]", path)
-
-
-# ==========================================
-# RESUME
-# ==========================================
+# ==============================
+# FUNCTION: Generate Resume
+# ==============================
 def generate_resume():
     os.makedirs(DEST_FOLDER, exist_ok=True)
 
-    date = datetime.now().strftime("%d_%b_%Y")
-    path = os.path.join(
-        DEST_FOLDER,
-        f"{RESUME_PREFIX}_{date}.pdf"
+    current_date = datetime.now().strftime("%d_%b_%Y")
+    new_filename = f"{RESUME_PREFIX}_{current_date}.pdf"
+    destination_path = os.path.join(DEST_FOLDER, new_filename)
+
+    if os.path.exists(destination_path):
+        os.remove(destination_path)
+        print("Old resume replaced")
+
+    shutil.copy2(SOURCE_RESUME, destination_path)
+    print(f"Resume ready: {destination_path}")
+
+    return destination_path
+
+# ==============================
+# FUNCTION: Setup Chrome Driver
+# ==============================
+def get_driver():
+    chrome_options = Options()
+
+    # ✅ STABLE headless mode (fix crash)
+    chrome_options.add_argument("--headless=old")
+
+    # ✅ Stability (VERY IMPORTANT)
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--incognito")  # ✅ no cookies stored
+    chrome_options.add_argument("--disable-application-cache")
+    chrome_options.add_argument("--disable-cache")
+    chrome_options.add_argument("--disk-cache-size=0")
+
+
+    # Prevent crash
+    chrome_options.add_argument("--remote-debugging-port=9222")
+
+    # Required window size
+    chrome_options.add_argument("--window-size=1920,1080")
+
+    # Reduce detection
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+
+    # Fake user-agent (important for Naukri)
+    chrome_options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
     )
 
-    if os.path.exists(path):
-        os.remove(path)
+    print("Launching Chrome...")
 
-    shutil.copy2(SOURCE_RESUME, path)
+    service = Service()
+    driver = webdriver.Chrome(service=service, options=chrome_options)
 
-    print("[SUCCESS] Resume ready:", path)
-    return os.path.abspath(path)
+    print("Chrome launched successfully")
+    return driver
 
+# ==============================
+# FUNCTION: Upload Resume
+# ==============================
+def upload_to_naukri(resume_path):
+    driver = get_driver()
+    wait = WebDriverWait(driver, 20)
 
-# ==========================================
-# SAFE OPEN
-# ==========================================
-def safe_open(page, url):
     try:
-        page.goto(
-            url,
-            wait_until="domcontentloaded",
-            timeout=30000
+        print("Opening Naukri login...")
+
+        driver.get("https://www.naukri.com/nlogin/login")
+
+        # Wait for login page
+        wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
+
+        # Enter email
+        driver.find_element(By.ID, "usernameField").send_keys(EMAIL)
+
+        # Enter password
+        password_field = driver.find_element(By.ID, "passwordField")
+        password_field.send_keys(PASSWORD)
+        password_field.send_keys(Keys.RETURN)
+
+        print("Logging in...")
+        time.sleep(5)
+
+        # Open profile page
+        driver.get("https://www.naukri.com/mnjuser/profile")
+
+        # Wait for upload input
+        upload_input = wait.until(
+            EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
         )
-        return True
+
+        # Upload resume
+        upload_input.send_keys(resume_path)
+
+        print("✅ Resume uploaded successfully!")
+
+        time.sleep(5)
 
     except Exception as e:
-        print("[WARN] open failed:", e)
+        print("❌ Error:", e)
 
-        try:
-            page.evaluate("window.stop()")
-            time.sleep(2)
-            return True
-        except Exception:
-            return False
+    finally:
+        driver.quit()
+        print("Browser closed")
 
-
-# ==========================================
-# CHECK LOGIN
-# ==========================================
-def already_logged_in(page):
-    if not safe_open(page, PROFILE_URL):
-        return False
-
-    time.sleep(3)
-
-    if "login" not in page.url.lower():
-        print("[INFO] Already logged in")
-        return True
-
-    return False
-
-
-# ==========================================
-# LOGIN
-# ==========================================
-def login(page):
-    print("[INFO] Opening home page")
-
-    if not safe_open(page, HOME_URL):
-        return False
-
-    time.sleep(3)
-    snap(page, "1_home")
-
-    try:
-        page.locator("text=Login").first.click(timeout=15000)
-
-        page.locator("#usernameField").fill(EMAIL)
-        page.locator("#passwordField").fill(PASSWORD)
-
-        snap(page, "2_credentials")
-
-        page.locator("button:has-text('Login')").click()
-
-        print("[INFO] Login clicked")
-
-    except Exception as e:
-        print("[ERROR] Login failed:", e)
-        snap(page, "login_error")
-        return False
-
-    time.sleep(6)
-    snap(page, "3_after_login")
-
-    html = page.content().lower()
-
-    if "otp" in html:
-        print("[ERROR] OTP triggered")
-        return False
-
-    if "login" not in page.url.lower():
-        print("[SUCCESS] Login successful")
-        return True
-
-    print("[ERROR] Login failed")
-    return False
-
-
-# ==========================================
-# UPLOAD
-# ==========================================
-def upload_resume(page, resume_path):
-    print("[INFO] Opening profile")
-
-    if not safe_open(page, PROFILE_URL):
-        return False
-
-    time.sleep(4)
-    snap(page, "4_profile")
-
-    try:
-        page.locator("text=Update resume").click(timeout=15000)
-
-        file_input = page.locator("input[type='file']")
-        file_input.set_input_files(resume_path)
-
-        time.sleep(4)
-        snap(page, "5_uploaded")
-
-        print("[SUCCESS] Resume uploaded")
-        return True
-
-    except Exception as e:
-        print("[ERROR] Upload failed:", e)
-        snap(page, "upload_error")
-        return False
-
-
-# ==========================================
+# ==============================
 # MAIN
-# ==========================================
-def main():
-    print("===== START =====")
-
-    if not EMAIL or not PASSWORD:
-        print("[ERROR] Missing credentials")
-        return
+# ==============================
+if __name__ == "__main__":
+    print("===== Naukri Automation Started =====")
 
     resume_path = generate_resume()
+    upload_to_naukri(resume_path)
 
-    launch_kwargs = {
-        "headless": True,
-        "args": [
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-        ],
-    }
-
-    if PROXY:
-        print("[INFO] Using proxy:", PROXY)
-        launch_kwargs["proxy"] = {"server": PROXY}
-    else:
-        print("[INFO] No proxy configured, using direct/system network")
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(**launch_kwargs)
-
-        context = browser.new_context(
-            viewport={
-                "width": 1920,
-                "height": 1080
-            },
-            locale="en-US",
-            user_agent=WINDOWS_UA,
-            storage_state=PROFILE_DIR if os.path.exists(PROFILE_DIR) else None
-        )
-
-        page = context.new_page()
-
-        try:
-            snap(page, "start")
-
-            if already_logged_in(page):
-                upload_resume(page, resume_path)
-            else:
-                if login(page):
-                    context.storage_state(path=PROFILE_DIR)
-                    upload_resume(page, resume_path)
-                else:
-                    print("[ERROR] Could not login")
-
-        except Exception as e:
-            print("[FATAL]", e)
-
-            try:
-                snap(page, "fatal_error")
-            except Exception:
-                pass
-
-        finally:
-            context.close()
-            browser.close()
-
-    print("===== DONE =====")
-
-
-if __name__ == "__main__":
-    main()
+    print("===== Process Completed =====")
