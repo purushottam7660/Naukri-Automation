@@ -19,7 +19,14 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Remove old ChromeDriver from PATH
+        shell: powershell
+        run: |
+          Remove-Item "C:\SeleniumWebDrivers\ChromeDriver\chromedriver.exe" -ErrorAction SilentlyContinue
 
       - name: Run Automation Script
         env:
