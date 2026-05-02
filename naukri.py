@@ -20,8 +20,8 @@ from selenium.webdriver.support import expected_conditions as EC
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
 
-SOURCE_RESUME = r"D:/Resume/Purushottam_Kumar_CV.pdf"
-DEST_FOLDER = r"D:\Naukri_resume"
+SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
+DEST_FOLDER = "Naukri_resume"
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
 
 # ==============================
