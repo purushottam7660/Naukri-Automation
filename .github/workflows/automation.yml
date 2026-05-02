@@ -23,10 +23,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Remove old ChromeDriver from PATH
+      - name: Remove old webdriver binaries
         shell: powershell
         run: |
           Remove-Item "C:\SeleniumWebDrivers\ChromeDriver\chromedriver.exe" -ErrorAction SilentlyContinue
+          Remove-Item "C:\SeleniumWebDrivers\EdgeDriver\msedgedriver.exe" -ErrorAction SilentlyContinue
 
       - name: Run Automation Script
         env:
