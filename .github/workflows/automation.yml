@@ -18,10 +18,13 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Set UTF-8 Encoding
+        run: echo "PYTHONIOENCODING=utf-8" >> $GITHUB_ENV
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run Automation Script
+      - name: Run Script
         env:
           NAUKRI_EMAIL: ${{ secrets.NAUKRI_EMAIL }}
           NAUKRI_PASSWORD: ${{ secrets.NAUKRI_PASSWORD }}
