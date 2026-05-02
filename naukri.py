@@ -74,12 +74,26 @@ def generate_resume():
 def get_driver():
     options = Options()
 
+    # ==========================
+    # CORE SETTINGS
+    # ==========================
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
 
+    # ==========================
+    # FORCE CLEAN SESSION
+    # ==========================
+    options.add_argument("--incognito")  # ✅ no cookies stored
+    options.add_argument("--disable-application-cache")
+    options.add_argument("--disable-cache")
+    options.add_argument("--disk-cache-size=0")
+
+    # ==========================
+    # USER AGENT
+    # ==========================
     options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -88,15 +102,48 @@ def get_driver():
 
     options.add_argument("--lang=en-US,en;q=0.9")
 
+    # ==========================
+    # PROXY (if any)
+    # ==========================
     if PROXY:
         print("[INFO] Proxy:", PROXY)
         options.add_argument(f"--proxy-server={PROXY}")
 
+    # ==========================
+    # DRIVER INIT
+    # ==========================
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
 
+    # ==========================
+    # EXTRA CLEAN BROWSER STATE
+    # ==========================
+    try:
+        driver.execute_cdp_cmd("Network.enable", {})
+        driver.execute_cdp_cmd("Network.clearBrowserCookies", {})
+        driver.execute_cdp_cmd("Network.clearBrowserCache", {})
+    except:
+        pass
+
+    # ==========================
+    # REMOVE AUTOMATION FLAGS
+    # ==========================
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+        "source": """
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+
+            window.chrome = { runtime: {} };
+
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+        """
     })
 
     return driver
@@ -106,7 +153,7 @@ def get_driver():
 # ==============================
 def login(driver, wait):
     print("[INFO] Opening login page")
-    driver.get("https://www.naukri.com/")
+    driver.get("https://www.naukri.com/nlogin/login")
     time.sleep(4)
     snap(driver, "1_login_page")
 
