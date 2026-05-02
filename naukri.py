@@ -17,7 +17,11 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import (
+    NoSuchElementException,
+    TimeoutException,
+    StaleElementReferenceException,
+)
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -30,6 +34,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
 
+
 SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
 DEST_FOLDER = "Naukri_resume"
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
@@ -38,7 +43,7 @@ NAUKRI_LOGIN_URL = "https://www.naukri.com/nlogin/login"
 NAUKRI_PROFILE_URL = "https://www.naukri.com/mnjuser/profile"
 
 SCREENSHOT_DIR = "screenshots"
-MAX_LOGIN_ATTEMPTS = 5
+MAX_LOGIN_ATTEMPTS = 6
 
 updatePDF = False
 headless = True
@@ -131,8 +136,8 @@ def LoadNaukri(headless):
     options.add_argument("--disable-popups")
     options.add_argument("--disable-gpu")
     options.add_argument("--incognito")
-    options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-blink-features=AutomationControlled")
 
     options.add_argument(
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -181,7 +186,7 @@ def LoadNaukri(headless):
 # LOGIN HELPERS
 # ==============================
 def find_login_fields(driver):
-    wait = WebDriverWait(driver, 20)
+    wait = WebDriverWait(driver, 25)
 
     wait.until(
         lambda d: (
@@ -219,12 +224,18 @@ def find_login_fields(driver):
 
 
 def find_login_button(driver):
-    buttons = driver.find_elements(By.XPATH, "//button[@type='submit']")
+    candidates = [
+        "//button[contains(@class,'blue-btn') and normalize-space()='Login']",
+        "//button[normalize-space()='Login']",
+        "//button[contains(.,'Login') and not(contains(.,'OTP'))]"
+    ]
 
-    for btn in buttons:
+    for xpath in candidates:
         try:
-            if btn.text.strip() == "Login":
-                return btn
+            buttons = driver.find_elements(By.XPATH, xpath)
+            for btn in buttons:
+                if btn.is_displayed() and btn.is_enabled():
+                    return btn
         except Exception:
             continue
 
@@ -263,6 +274,15 @@ def click_login(driver, btn, attempt):
     elif attempt == 4:
         btn.send_keys(Keys.ENTER)
 
+    elif attempt == 5:
+        driver.execute_script(
+            """
+            arguments[0].focus();
+            arguments[0].click();
+            """,
+            btn
+        )
+
     else:
         driver.execute_script("arguments[0].click();", btn)
 
@@ -270,12 +290,17 @@ def click_login(driver, btn, attempt):
 
 
 def login_success(driver):
+    time.sleep(3)
+
     url = driver.current_url.lower()
 
-    if "login" not in url:
+    if "profile" in url:
         return True
 
-    if "profile" in url:
+    if "mnjuser" in url:
+        return True
+
+    if "login" not in url:
         return True
 
     return False
@@ -333,9 +358,11 @@ def naukriLogin(headless=False):
 
                 sleep_with_screenshot(
                     driver,
-                    8,
+                    10,
                     f"attempt_{attempt}_after_click"
                 )
+
+                log_msg(f"Current URL: {driver.current_url}")
 
                 if login_success(driver):
                     log_msg("Naukri Login Successful")
@@ -344,8 +371,12 @@ def naukriLogin(headless=False):
 
                 log_msg("Login not completed, retrying...")
 
-            except TimeoutException:
+            except (
+                TimeoutException,
+                StaleElementReferenceException
+            ) as e:
                 take_screenshot(driver, f"attempt_{attempt}_timeout")
+                log_msg(f"Attempt timeout: {e}")
 
             except Exception as e:
                 take_screenshot(driver, f"attempt_{attempt}_error")
@@ -353,7 +384,7 @@ def naukriLogin(headless=False):
 
             sleep_with_screenshot(
                 driver,
-                3,
+                4,
                 f"attempt_{attempt}_retry_wait"
             )
 
