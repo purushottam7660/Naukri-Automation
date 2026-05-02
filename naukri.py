@@ -25,8 +25,19 @@ SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
 DEST_FOLDER = "Naukri_resume"
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
 
+SCREENSHOT_DIR = "screenshots"
+os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
 # ==============================
-# UTIL: Human typing
+# SCREENSHOT FUNCTION
+# ==============================
+def snap(driver, name):
+    path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
+    driver.save_screenshot(path)
+    print(f"📸 Screenshot saved: {path}")
+
+# ==============================
+# HUMAN TYPING
 # ==============================
 def type_like_human(element, text):
     for ch in text:
@@ -34,7 +45,7 @@ def type_like_human(element, text):
         time.sleep(random.uniform(0.05, 0.15))
 
 # ==============================
-# GENERATE RESUME
+# RESUME GENERATE
 # ==============================
 def generate_resume():
     os.makedirs(DEST_FOLDER, exist_ok=True)
@@ -51,64 +62,50 @@ def generate_resume():
     return os.path.abspath(path)
 
 # ==============================
-# DRIVER SETUP
+# DRIVER
 # ==============================
 def get_driver():
     options = Options()
 
-    # Headless for GitHub; comment this locally for better success
     options.add_argument("--headless=new")
-
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
 
-    # UA (Chrome 147)
     options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/147.0.0.0 Safari/537.36"
     )
 
-    # Language & headers hints
     options.add_argument("--lang=en-US,en;q=0.9")
-
-    # Proxy (optional)
-    if PROXY:
-        print("🌐 Using Proxy:", PROXY)
-        options.add_argument(f"--proxy-server={PROXY}")
-    else:
-        print("🌐 No proxy used")
-
-    # Reduce obvious automation flag
     options.add_argument("--disable-blink-features=AutomationControlled")
+
+    if PROXY:
+        print("🌐 Proxy:", PROXY)
+        options.add_argument(f"--proxy-server={PROXY}")
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
 
-    # Minor webdriver flag reduction
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": """
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        """
+        "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
     })
 
     return driver
 
 # ==============================
-# LOGIN
+# LOGIN (WITH SCREENSHOTS)
 # ==============================
 def login(driver, wait):
     print("🌐 Opening login page...")
     driver.get("https://www.naukri.com/nlogin/login")
-
     time.sleep(4)
-    print("📄 Page Title:", driver.title)
+    snap(driver, "1_login_page")
 
     if "Access Denied" in driver.title:
-        print("❌ Blocked page")
-        driver.save_screenshot("blocked.png")
+        snap(driver, "blocked")
         return False
 
     try:
@@ -119,48 +116,55 @@ def login(driver, wait):
 
         email.clear()
         type_like_human(email, EMAIL)
+        snap(driver, "2_email_filled")
 
-        time.sleep(random.uniform(0.5, 1.2))
+        time.sleep(1)
 
         password.clear()
         type_like_human(password, PASSWORD)
+        snap(driver, "3_password_filled")
 
-        time.sleep(random.uniform(0.5, 1.2))
         password.send_keys(Keys.RETURN)
+        print("🔐 Logging in...")
 
     except Exception:
-        print("⚠️ Fallback JS input")
+        print("⚠️ JS fallback login")
         driver.execute_script("""
             document.getElementById('usernameField').value = arguments[0];
             document.getElementById('passwordField').value = arguments[1];
         """, EMAIL, PASSWORD)
+        snap(driver, "2_js_login")
+
         driver.execute_script("document.querySelector('button[type=\"submit\"]').click();")
 
-    print("🔐 Logging in...")
+    time.sleep(6)
+    snap(driver, "4_after_login")
 
-    try:
-        wait.until(lambda d: "login" not in d.current_url)
+    if "login" not in driver.current_url:
         print("✅ Login success")
         return True
-    except:
+    else:
         print("❌ Login failed")
-        driver.save_screenshot("login_error.png")
+        snap(driver, "login_failed")
         return False
 
 # ==============================
-# UPLOAD
+# UPLOAD RESUME
 # ==============================
 def upload_resume(driver, wait, resume_path):
-    print("📂 Opening profile...")
+    print("📂 Opening profile page...")
     driver.get("https://www.naukri.com/mnjuser/profile")
+    time.sleep(5)
+    snap(driver, "5_profile_page")
 
     upload = wait.until(
         EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
     )
 
-    time.sleep(random.uniform(1, 2))
     upload.send_keys(resume_path)
+    time.sleep(3)
 
+    snap(driver, "6_after_upload")
     print("🎉 Resume uploaded!")
 
 # ==============================
@@ -174,27 +178,28 @@ def main():
         return
 
     resume_path = generate_resume()
-    print("📂 Absolute path:", resume_path)
+    print("📂 Resume:", resume_path)
 
     driver = get_driver()
     wait = WebDriverWait(driver, 120)
 
     try:
+        snap(driver, "start_browser")
+
         for attempt in range(3):
             print(f"🔁 Attempt {attempt+1}")
 
             if login(driver, wait):
                 time.sleep(random.uniform(3, 6))
                 upload_resume(driver, wait, resume_path)
+                snap(driver, "success_end")
                 break
             else:
-                sleep_time = random.uniform(5, 10)
-                print(f"Retrying after {sleep_time:.1f}s...")
-                time.sleep(sleep_time)
+                time.sleep(random.uniform(5, 10))
 
     except Exception as e:
         print("❌ Error:", e)
-        driver.save_screenshot("error.png")
+        snap(driver, "error")
 
     finally:
         driver.quit()
