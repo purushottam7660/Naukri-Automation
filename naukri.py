@@ -4,19 +4,12 @@ import shutil
 import time
 from datetime import datetime
 
-from playwright.sync_api import sync_playwright, TimeoutError
+from playwright.sync_api import sync_playwright
 
 
-# ==========================================
-# UTF-8
-# ==========================================
 os.environ["PYTHONIOENCODING"] = "utf-8"
 sys.stdout.reconfigure(encoding="utf-8")
 
-
-# ==========================================
-# CONFIG
-# ==========================================
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
 
@@ -27,24 +20,18 @@ RESUME_PREFIX = "Purushottam_Kumar_Resume"
 SCREENSHOT_DIR = "screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
-STATE_FILE = "naukri_state.json"
+PROFILE_DIR = os.path.abspath("playwright_profile")
 
 HOME_URL = "https://www.naukri.com/"
 PROFILE_URL = "https://www.naukri.com/mnjuser/profile"
 
 
-# ==========================================
-# SCREENSHOT
-# ==========================================
 def snap(page, name):
     path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
     page.screenshot(path=path, full_page=True)
     print("[SCREENSHOT]", path)
 
 
-# ==========================================
-# RESUME
-# ==========================================
 def generate_resume():
     os.makedirs(DEST_FOLDER, exist_ok=True)
 
@@ -63,9 +50,6 @@ def generate_resume():
     return os.path.abspath(path)
 
 
-# ==========================================
-# OPEN PAGE
-# ==========================================
 def safe_open(page, url):
     try:
         page.goto(
@@ -74,21 +58,11 @@ def safe_open(page, url):
             timeout=30000
         )
         return True
-
     except Exception as e:
         print("[WARN] open failed:", e)
-
-        try:
-            page.evaluate("window.stop()")
-            time.sleep(2)
-            return True
-        except Exception:
-            return False
+        return False
 
 
-# ==========================================
-# CHECK SESSION
-# ==========================================
 def already_logged_in(page):
     if not safe_open(page, PROFILE_URL):
         return False
@@ -102,9 +76,6 @@ def already_logged_in(page):
     return False
 
 
-# ==========================================
-# LOGIN
-# ==========================================
 def login(page):
     print("[INFO] Opening home page")
 
@@ -124,13 +95,6 @@ def login(page):
 
         page.locator("button:has-text('Login')").click()
 
-        print("[INFO] Login clicked")
-
-    except TimeoutError as e:
-        print("[ERROR] Login timeout:", e)
-        snap(page, "login_timeout")
-        return False
-
     except Exception as e:
         print("[ERROR] Login failed:", e)
         snap(page, "login_error")
@@ -139,23 +103,14 @@ def login(page):
     time.sleep(6)
     snap(page, "3_after_login")
 
-    html = page.content().lower()
-
-    if "otp" in html:
-        print("[ERROR] OTP triggered")
-        return False
-
     if "login" not in page.url.lower():
         print("[SUCCESS] Login successful")
         return True
 
-    print("[ERROR] Login failed")
+    print("[ERROR] Login may require OTP or manual verification")
     return False
 
 
-# ==========================================
-# UPLOAD
-# ==========================================
 def upload_resume(page, resume_path):
     print("[INFO] Opening profile")
 
@@ -183,9 +138,6 @@ def upload_resume(page, resume_path):
         return False
 
 
-# ==========================================
-# MAIN
-# ==========================================
 def main():
     print("===== START =====")
 
@@ -196,28 +148,12 @@ def main():
     resume_path = generate_resume()
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-                "--disable-gpu",
-                "--disable-http2"
-            ]
+        context = p.chromium.launch_persistent_context(
+            user_data_dir=PROFILE_DIR,
+            headless=False,
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US"
         )
-
-        context_args = {
-            "viewport": {
-                "width": 1920,
-                "height": 1080
-            },
-            "locale": "en-US"
-        }
-
-        if os.path.exists(STATE_FILE):
-            context_args["storage_state"] = STATE_FILE
-
-        context = browser.new_context(**context_args)
 
         page = context.new_page()
 
@@ -226,25 +162,12 @@ def main():
 
             if already_logged_in(page):
                 upload_resume(page, resume_path)
-
             else:
                 if login(page):
-                    context.storage_state(path=STATE_FILE)
                     upload_resume(page, resume_path)
-                else:
-                    print("[ERROR] Could not login")
-
-        except Exception as e:
-            print("[FATAL]", e)
-
-            try:
-                snap(page, "fatal_error")
-            except Exception:
-                pass
 
         finally:
             context.close()
-            browser.close()
 
     print("===== DONE =====")
 
