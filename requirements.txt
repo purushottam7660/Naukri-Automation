@@ -1,2 +1,4 @@
 selenium==4.20.0
 webdriver-manager
+pip install playwright
+playwright install chromium
