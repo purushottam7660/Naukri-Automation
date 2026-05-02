@@ -2,21 +2,19 @@ import os
 import shutil
 import time
 from datetime import datetime
-import os
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# ==============================
-# USER CONFIGURATION
-# ==============================
+from webdriver_manager.chrome import ChromeDriverManager
 
-
+# ==============================
+# CONFIG
+# ==============================
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
 
@@ -25,7 +23,7 @@ DEST_FOLDER = "Naukri_resume"
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
 
 # ==============================
-# FUNCTION: Generate Resume
+# GENERATE RESUME
 # ==============================
 def generate_resume():
     os.makedirs(DEST_FOLDER, exist_ok=True)
@@ -36,105 +34,129 @@ def generate_resume():
 
     if os.path.exists(destination_path):
         os.remove(destination_path)
-        print("Old resume replaced")
 
     shutil.copy2(SOURCE_RESUME, destination_path)
-    print(f"Resume ready: {destination_path}")
+    print(f"✅ Resume ready: {destination_path}")
 
-    return destination_path
+    return os.path.abspath(destination_path)
 
 # ==============================
-# FUNCTION: Setup Chrome Driver
+# SETUP DRIVER
 # ==============================
 def get_driver():
     chrome_options = Options()
 
-    # ✅ STABLE headless mode (fix crash)
-    chrome_options.add_argument("--headless=old")
+    # ✅ Headless for GitHub
+    chrome_options.add_argument("--headless=new")
 
-    # ✅ Stability (VERY IMPORTANT)
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-extensions")
-
-    # Prevent crash
-    chrome_options.add_argument("--remote-debugging-port=9222")
-
-    # Required window size
     chrome_options.add_argument("--window-size=1920,1080")
 
-    # Reduce detection
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
-    # Fake user-agent (important for Naukri)
-    chrome_options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
+    print("🚀 Launching Chrome...")
 
-    print("Launching Chrome...")
-
-    service = Service()
+    service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
 
-    print("Chrome launched successfully")
+    print("✅ Chrome launched")
     return driver
 
 # ==============================
-# FUNCTION: Upload Resume
+# MAIN AUTOMATION
 # ==============================
 def upload_to_naukri(resume_path):
     driver = get_driver()
-    wait = WebDriverWait(driver, 20)
+    wait = WebDriverWait(driver, 30)
 
     try:
-        print("Opening Naukri login...")
-
+        print("🌐 Opening login page...")
         driver.get("https://www.naukri.com/nlogin/login")
 
-        # Wait for login page
-        wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
-
-        # Enter email
-        driver.find_element(By.ID, "usernameField").send_keys(EMAIL)
-
-        # Enter password
-        password_field = driver.find_element(By.ID, "passwordField")
-        password_field.send_keys(PASSWORD)
-        password_field.send_keys(Keys.RETURN)
-
-        print("Logging in...")
         time.sleep(5)
 
-        # Open profile page
+        print("📄 Page Title:", driver.title)
+
+        # Wait for page load
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+
+        # ==============================
+        # LOGIN USING JS (FIXED)
+        # ==============================
+        print("✉️ Setting Email...")
+        driver.execute_script(
+            "document.getElementById('usernameField').value = arguments[0];",
+            EMAIL
+        )
+
+        time.sleep(1)
+
+        print("🔑 Setting Password...")
+        driver.execute_script(
+            "document.getElementById('passwordField').value = arguments[0];",
+            PASSWORD
+        )
+
+        time.sleep(1)
+
+        print("🔐 Clicking Login...")
+        driver.execute_script(
+            "document.querySelector('button[type=\"submit\"]').click();"
+        )
+
+        time.sleep(8)
+
+        print("📍 Current URL:", driver.current_url)
+
+        # ==============================
+        # CHECK LOGIN SUCCESS
+        # ==============================
+        if "login" in driver.current_url:
+            print("❌ Login failed (blocked / not filled)")
+            driver.save_screenshot("error.png")
+            return
+
+        # ==============================
+        # OPEN PROFILE
+        # ==============================
+        print("📂 Opening profile page...")
         driver.get("https://www.naukri.com/mnjuser/profile")
 
-        # Wait for upload input
+        time.sleep(5)
+
+        # ==============================
+        # UPLOAD RESUME
+        # ==============================
+        print("📤 Uploading resume...")
         upload_input = wait.until(
             EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
         )
 
-        # Upload resume
         upload_input.send_keys(resume_path)
 
-        print("✅ Resume uploaded successfully!")
+        print("🎉 Resume uploaded successfully!")
 
         time.sleep(5)
 
     except Exception as e:
         print("❌ Error:", e)
+        driver.save_screenshot("error.png")
 
     finally:
         driver.quit()
-        print("Browser closed")
+        print("🧹 Browser closed")
 
 # ==============================
-# MAIN
+# ENTRY POINT
 # ==============================
 if __name__ == "__main__":
     print("===== Naukri Automation Started =====")
+
+    if not EMAIL or not PASSWORD:
+        print("❌ Missing credentials (check GitHub Secrets)")
+        exit(1)
 
     resume_path = generate_resume()
     upload_to_naukri(resume_path)
