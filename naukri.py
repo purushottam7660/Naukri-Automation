@@ -1,14 +1,27 @@
+#! python3
+# -*- coding: utf-8 -*-
+"""Naukri Daily update - Using Chrome"""
+
+import io
+import logging
 import os
-import shutil
+import sys
 import time
+import shutil
 from datetime import datetime
+from random import choice, randint
+from string import ascii_uppercase, digits
+
+from pypdf import PdfReader, PdfWriter
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 from selenium import webdriver
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
 
 
 # ==============================
@@ -21,24 +34,52 @@ SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
 DEST_FOLDER = "Naukri_resume"
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
 
-SCREENSHOT_DIR = "screenshots"
-os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+NAUKRI_LOGIN_URL = "https://www.naukri.com/nlogin/login"
+NAUKRI_PROFILE_URL = "https://www.naukri.com/mnjuser/profile"
 
+SCREENSHOT_DIR = "screenshots"
 MAX_LOGIN_ATTEMPTS = 5
 
+updatePDF = False
+headless = True
+
+os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    filename="naukri.log",
+    format="%(asctime)s    : %(message)s",
+)
+
 
 # ==============================
-# FUNCTION: SCREENSHOT
+# LOGGING
+# ==============================
+def log_msg(message):
+    print(message)
+    logging.info(message)
+
+
+def catch(error):
+    _, _, exc_tb = sys.exc_info()
+    lineNo = str(exc_tb.tb_lineno)
+    msg = "%s : %s at Line %s." % (type(error), error, lineNo)
+    print(msg)
+    logging.error(msg)
+
+
+# ==============================
+# SCREENSHOT
 # ==============================
 def take_screenshot(driver, name):
-    path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
-    driver.save_screenshot(path)
-    print(f"[SCREENSHOT] {path}")
+    try:
+        path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
+        driver.save_screenshot(path)
+        log_msg(f"[SCREENSHOT] {path}")
+    except Exception:
+        pass
 
 
-# ==============================
-# FUNCTION: WAIT WITH SCREENSHOT
-# ==============================
 def sleep_with_screenshot(driver, seconds, prefix):
     take_screenshot(driver, f"{prefix}_before_wait")
     time.sleep(seconds)
@@ -46,7 +87,7 @@ def sleep_with_screenshot(driver, seconds, prefix):
 
 
 # ==============================
-# FUNCTION: Generate Resume
+# RESUME GENERATOR
 # ==============================
 def generate_resume():
     os.makedirs(DEST_FOLDER, exist_ok=True)
@@ -57,31 +98,43 @@ def generate_resume():
 
     if os.path.exists(destination_path):
         os.remove(destination_path)
-        print("Old resume replaced")
 
     shutil.copy2(SOURCE_RESUME, destination_path)
 
-    print(f"Resume ready: {destination_path}")
+    log_msg(f"Resume ready: {destination_path}")
 
     return os.path.abspath(destination_path)
 
 
 # ==============================
-# FUNCTION: CHROME DRIVER
+# SELENIUM HELPERS
 # ==============================
-def get_driver():
-    chrome_options = Options()
+def is_element_present(driver, how, what):
+    try:
+        driver.find_element(by=how, value=what)
+    except NoSuchElementException:
+        return False
+    return True
 
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--incognito")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
-    chrome_options.add_argument(
+def randomText():
+    return "".join(choice(ascii_uppercase + digits) for _ in range(randint(1, 5)))
+
+
+# ==============================
+# CHROME
+# ==============================
+def LoadNaukri(headless):
+    options = webdriver.ChromeOptions()
+
+    options.add_argument("--disable-notifications")
+    options.add_argument("--disable-popups")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--incognito")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--window-size=1920,1080")
+
+    options.add_argument(
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/148.0.7778.97 Safari/537.36"
@@ -89,14 +142,20 @@ def get_driver():
 
     proxy = os.getenv("HTTP_PROXY")
     if proxy:
-        chrome_options.add_argument(f"--proxy-server={proxy}")
-        print(f"Using custom proxy: {proxy}")
+        options.add_argument(f"--proxy-server={proxy}")
+        log_msg(f"Using custom proxy: {proxy}")
     else:
-        print("Using default network route")
+        log_msg("Using default network route")
 
-    print("Launching Chrome...")
+    if headless:
+        options.add_argument("--headless=new")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--no-sandbox")
 
-    driver = webdriver.Chrome(options=chrome_options)
+    driver = webdriver.Chrome(
+        options=options,
+        service=ChromeService()
+    )
 
     driver.execute_cdp_cmd(
         "Page.addScriptToEvaluateOnNewDocument",
@@ -109,16 +168,20 @@ def get_driver():
         },
     )
 
-    print("Chrome launched successfully")
+    driver.implicitly_wait(5)
+
+    log_msg("Google Chrome Launched!")
+
+    driver.get(NAUKRI_LOGIN_URL)
 
     return driver
 
 
 # ==============================
-# FUNCTION: FIND LOGIN FIELDS
+# LOGIN HELPERS
 # ==============================
 def find_login_fields(driver):
-    wait = WebDriverWait(driver, 25)
+    wait = WebDriverWait(driver, 20)
 
     wait.until(
         lambda d: (
@@ -141,26 +204,20 @@ def find_login_fields(driver):
     ]
 
     for by, value in email_candidates:
-        elems = driver.find_elements(by, value)
-        if elems:
-            email_field = elems[0]
+        els = driver.find_elements(by, value)
+        if els:
+            email_field = els[0]
             break
 
     for by, value in password_candidates:
-        elems = driver.find_elements(by, value)
-        if elems:
-            password_field = elems[0]
+        els = driver.find_elements(by, value)
+        if els:
+            password_field = els[0]
             break
-
-    if not email_field or not password_field:
-        raise Exception("Login fields not found")
 
     return email_field, password_field
 
 
-# ==============================
-# FUNCTION: FIND LOGIN BUTTON
-# ==============================
 def find_login_button(driver):
     buttons = driver.find_elements(By.XPATH, "//button[@type='submit']")
 
@@ -174,13 +231,10 @@ def find_login_button(driver):
     return None
 
 
-# ==============================
-# FUNCTION: CLICK LOGIN
-# ==============================
-def click_login(driver, login_btn, attempt):
+def click_login(driver, btn, attempt):
     driver.execute_script(
         "arguments[0].scrollIntoView({block:'center'});",
-        login_btn
+        btn
     )
 
     take_screenshot(driver, f"attempt_{attempt}_login_button_found")
@@ -188,10 +242,10 @@ def click_login(driver, login_btn, attempt):
     time.sleep(1)
 
     if attempt == 1:
-        login_btn.click()
+        btn.click()
 
     elif attempt == 2:
-        driver.execute_script("arguments[0].click();", login_btn)
+        driver.execute_script("arguments[0].click();", btn)
 
     elif attempt == 3:
         driver.execute_script(
@@ -203,27 +257,18 @@ def click_login(driver, login_btn, attempt):
                 view: window
             }));
             """,
-            login_btn
+            btn
         )
 
     elif attempt == 4:
-        driver.execute_script(
-            """
-            arguments[0].focus();
-            arguments[0].click();
-            """,
-            login_btn
-        )
+        btn.send_keys(Keys.ENTER)
 
     else:
-        driver.execute_script("arguments[0].click();", login_btn)
+        driver.execute_script("arguments[0].click();", btn)
 
     take_screenshot(driver, f"attempt_{attempt}_login_clicked")
 
 
-# ==============================
-# FUNCTION: CHECK LOGIN SUCCESS
-# ==============================
 def login_success(driver):
     url = driver.current_url.lower()
 
@@ -237,148 +282,225 @@ def login_success(driver):
 
 
 # ==============================
-# FUNCTION: LOGIN WITH RETRIES
+# LOGIN
 # ==============================
-def login_to_naukri(driver):
-    for attempt in range(1, MAX_LOGIN_ATTEMPTS + 1):
-        print(f"Login attempt {attempt}")
-
-        driver.get("https://www.naukri.com/nlogin/login")
-
-        sleep_with_screenshot(
-            driver,
-            5,
-            f"attempt_{attempt}_page_load"
-        )
-
-        try:
-            email_field, password_field = find_login_fields(driver)
-
-            take_screenshot(driver, f"attempt_{attempt}_fields_found")
-
-            email_field.clear()
-            email_field.send_keys(EMAIL)
-
-            take_screenshot(driver, f"attempt_{attempt}_email_entered")
-
-            password_field.clear()
-            password_field.send_keys(PASSWORD)
-
-            take_screenshot(driver, f"attempt_{attempt}_password_entered")
-
-            sleep_with_screenshot(
-                driver,
-                2,
-                f"attempt_{attempt}_before_click"
-            )
-
-            login_btn = find_login_button(driver)
-
-            if not login_btn:
-                raise Exception("Login button not found")
-
-            click_login(driver, login_btn, attempt)
-
-            sleep_with_screenshot(
-                driver,
-                8,
-                f"attempt_{attempt}_after_click"
-            )
-
-            if login_success(driver):
-                take_screenshot(driver, f"attempt_{attempt}_login_success")
-                print("Login successful")
-                return True
-
-            take_screenshot(driver, f"attempt_{attempt}_login_not_completed")
-            print("Login not completed, retrying...")
-
-        except TimeoutException:
-            take_screenshot(driver, f"attempt_{attempt}_timeout")
-            print("Timeout during login attempt")
-
-        except Exception as e:
-            take_screenshot(driver, f"attempt_{attempt}_error")
-            print("Login attempt failed:", e)
-
-        sleep_with_screenshot(
-            driver,
-            3,
-            f"attempt_{attempt}_retry_wait"
-        )
-
-    raise Exception("Unable to login after retries")
-
-
-# ==============================
-# FUNCTION: UPLOAD RESUME
-# ==============================
-def upload_resume(driver, resume_path):
-    print("Opening profile page...")
-
-    driver.get("https://www.naukri.com/mnjuser/profile")
-
-    sleep_with_screenshot(
-        driver,
-        4,
-        "profile_page_load"
-    )
-
-    wait = WebDriverWait(driver, 30)
-
-    upload_input = wait.until(
-        EC.presence_of_element_located(
-            (By.XPATH, "//input[@type='file']")
-        )
-    )
-
-    take_screenshot(driver, "upload_input_found")
-
-    upload_input.send_keys(resume_path)
-
-    sleep_with_screenshot(
-        driver,
-        4,
-        "after_resume_upload"
-    )
-
-    take_screenshot(driver, "resume_uploaded")
-
-    print("Resume uploaded successfully")
-
-
-# ==============================
-# FUNCTION: MAIN FLOW
-# ==============================
-def upload_to_naukri(resume_path):
-    driver = get_driver()
+def naukriLogin(headless=False):
+    status = False
+    driver = None
 
     try:
-        take_screenshot(driver, "00_browser_started")
+        driver = LoadNaukri(headless)
 
-        login_to_naukri(driver)
+        for attempt in range(1, MAX_LOGIN_ATTEMPTS + 1):
+            log_msg(f"Login attempt {attempt}")
 
-        upload_resume(driver, resume_path)
+            driver.get(NAUKRI_LOGIN_URL)
 
-        take_screenshot(driver, "final_state")
+            sleep_with_screenshot(
+                driver,
+                5,
+                f"attempt_{attempt}_page_load"
+            )
 
-    finally:
+            try:
+                email_field, password_field = find_login_fields(driver)
+
+                if not email_field or not password_field:
+                    raise Exception("Login fields not found")
+
+                email_field.clear()
+                email_field.send_keys(EMAIL)
+
+                take_screenshot(driver, f"attempt_{attempt}_email_entered")
+
+                password_field.clear()
+                password_field.send_keys(PASSWORD)
+
+                take_screenshot(driver, f"attempt_{attempt}_password_entered")
+
+                sleep_with_screenshot(
+                    driver,
+                    2,
+                    f"attempt_{attempt}_before_click"
+                )
+
+                login_btn = find_login_button(driver)
+
+                if not login_btn:
+                    raise Exception("Login button not found")
+
+                click_login(driver, login_btn, attempt)
+
+                sleep_with_screenshot(
+                    driver,
+                    8,
+                    f"attempt_{attempt}_after_click"
+                )
+
+                if login_success(driver):
+                    log_msg("Naukri Login Successful")
+                    status = True
+                    return status, driver
+
+                log_msg("Login not completed, retrying...")
+
+            except TimeoutException:
+                take_screenshot(driver, f"attempt_{attempt}_timeout")
+
+            except Exception as e:
+                take_screenshot(driver, f"attempt_{attempt}_error")
+                log_msg(f"Attempt failed: {e}")
+
+            sleep_with_screenshot(
+                driver,
+                3,
+                f"attempt_{attempt}_retry_wait"
+            )
+
+    except Exception as e:
+        catch(e)
+
+    return status, driver
+
+
+# ==============================
+# UPDATE RESUME
+# ==============================
+def UpdateResume():
+    try:
+        txt = randomText()
+        xloc = randint(700, 1000)
+        fsize = randint(1, 10)
+
+        packet = io.BytesIO()
+        can = canvas.Canvas(packet, pagesize=letter)
+        can.setFont("Helvetica", fsize)
+        can.drawString(xloc, 100, txt)
+        can.save()
+
+        packet.seek(0)
+        new_pdf = PdfReader(packet)
+
+        with open(SOURCE_RESUME, "rb") as f:
+            existing_pdf = PdfReader(f)
+            pagecount = len(existing_pdf.pages)
+
+            output = PdfWriter()
+
+            for pageNum in range(pagecount - 1):
+                output.add_page(existing_pdf.pages[pageNum])
+
+            page = existing_pdf.pages[pagecount - 1]
+            page.merge_page(new_pdf.pages[0])
+            output.add_page(page)
+
+            temp_path = os.path.join(DEST_FOLDER, "temp_resume.pdf")
+
+            with open(temp_path, "wb") as outputStream:
+                output.write(outputStream)
+
+            return os.path.abspath(temp_path)
+
+    except Exception as e:
+        catch(e)
+
+    return os.path.abspath(SOURCE_RESUME)
+
+
+# ==============================
+# UPLOAD RESUME
+# ==============================
+def UploadResume(driver, resumePath):
+    try:
+        driver.get(NAUKRI_PROFILE_URL)
+
+        sleep_with_screenshot(driver, 4, "profile_page_load")
+
+        wait = WebDriverWait(driver, 30)
+
+        upload_input = wait.until(
+            lambda d: d.find_element(By.XPATH, "//input[@type='file']")
+        )
+
+        take_screenshot(driver, "upload_input_found")
+
+        upload_input.send_keys(os.path.abspath(resumePath))
+
+        sleep_with_screenshot(driver, 4, "after_resume_upload")
+
+        take_screenshot(driver, "resume_uploaded")
+
+        log_msg("Resume uploaded successfully")
+
+    except Exception as e:
+        catch(e)
+
+
+# ==============================
+# LOGOUT
+# ==============================
+def Logout(driver):
+    try:
+        driver.delete_all_cookies()
+    except Exception:
+        pass
+
+
+# ==============================
+# TEARDOWN
+# ==============================
+def tearDown(driver):
+    if driver is None:
+        return
+
+    try:
+        driver.close()
+    except Exception:
+        pass
+
+    try:
         driver.quit()
-        print("Browser closed")
+    except Exception:
+        pass
 
 
 # ==============================
 # MAIN
 # ==============================
+def main():
+    log_msg("-----Naukri.py Script Run Begin-----")
+
+    driver = None
+
+    try:
+        if not EMAIL or not PASSWORD:
+            log_msg("Missing NAUKRI_EMAIL or NAUKRI_PASSWORD")
+            raise SystemExit(1)
+
+        resume_path = generate_resume()
+
+        status, driver = naukriLogin(headless)
+
+        if status:
+            if updatePDF:
+                resume_path = UpdateResume()
+
+            UploadResume(driver, resume_path)
+
+    except Exception as e:
+        catch(e)
+
+    finally:
+        if driver is not None:
+            try:
+                Logout(driver)
+            except Exception:
+                pass
+
+        tearDown(driver)
+
+    log_msg("-----Naukri.py Script Run Ended-----\n")
+
+
 if __name__ == "__main__":
-    print("===== Naukri Automation Started =====")
-
-    if not EMAIL or not PASSWORD:
-        print("Missing NAUKRI_EMAIL or NAUKRI_PASSWORD")
-        raise SystemExit(1)
-
-    resume_path = generate_resume()
-
-    upload_to_naukri(resume_path)
-
-    print("===== Process Completed =====")
+    main()
