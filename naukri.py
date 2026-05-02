@@ -16,7 +16,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 # ==============================
-# FIX UTF-8 OUTPUT (IMPORTANT)
+# UTF-8 FIX
 # ==============================
 os.environ["PYTHONIOENCODING"] = "utf-8"
 sys.stdout.reconfigure(encoding='utf-8')
@@ -102,7 +102,7 @@ def get_driver():
     return driver
 
 # ==============================
-# LOGIN
+# LOGIN (FULL FIXED VERSION)
 # ==============================
 def login(driver, wait):
     print("[INFO] Opening login page")
@@ -122,16 +122,59 @@ def login(driver, wait):
         type_like_human(password, PASSWORD)
         snap(driver, "3_password_filled")
 
-        password.send_keys(Keys.RETURN)
+        # ==========================================
+        # ✅ MULTI-FALLBACK LOGIN BUTTON CLICK
+        # ==========================================
 
-    except Exception:
-        print("[WARN] JS fallback login")
-        driver.execute_script("""
-            document.getElementById('usernameField').value = arguments[0];
-            document.getElementById('passwordField').value = arguments[1];
-        """, EMAIL, PASSWORD)
+        login_btn = None
 
-        driver.execute_script("document.querySelector('button[type=\"submit\"]').click();")
+        # 1st: primary selector
+        try:
+            login_btn = driver.find_element(By.CSS_SELECTOR, "button.btn-primary.loginButton")
+            print("[INFO] Found primary login button")
+        except:
+            print("[WARN] Primary login button not found")
+
+        # 2nd: text-based fallback
+        if not login_btn:
+            try:
+                login_btn = driver.find_element(
+                    By.XPATH,
+                    "//button[contains(text(),'Login') or contains(.,'Login')]"
+                )
+                print("[INFO] Found text-based login button")
+            except:
+                print("[WARN] Text-based login button not found")
+
+        # 3rd: provided alternate selector
+        if not login_btn:
+            try:
+                login_btn = driver.find_element(
+                    By.CSS_SELECTOR,
+                    "button.waves-effect.waves-light.btn-large.btn-block.btn-bold.blue-btn.textTransform"
+                )
+                print("[INFO] Found blue UI login button")
+            except:
+                print("[ERROR] No login button found")
+
+        # CLICK SAFELY
+        if login_btn:
+            try:
+                driver.execute_script("arguments[0].scrollIntoView(true);", login_btn)
+                time.sleep(1)
+                login_btn.click()
+                print("[SUCCESS] Login button clicked")
+            except:
+                print("[WARN] Normal click failed, using JS click")
+                driver.execute_script("arguments[0].click();", login_btn)
+        else:
+            print("[FATAL] Login button not found")
+            return False
+
+    except Exception as e:
+        print("[ERROR] Login flow failed:", e)
+        snap(driver, "login_error")
+        return False
 
     time.sleep(6)
     snap(driver, "4_after_login")
@@ -140,7 +183,7 @@ def login(driver, wait):
         print("[SUCCESS] Login successful")
         return True
     else:
-        print("[ERROR] Login failed")
+        print("[ERROR] Login failed / OTP triggered")
         snap(driver, "login_failed")
         return False
 
@@ -155,7 +198,6 @@ def upload_resume(driver, wait, resume_path):
     snap(driver, "5_profile")
 
     try:
-        print("[INFO] Clicking update resume")
         update_btn = wait.until(
             EC.element_to_be_clickable((By.XPATH, "//span[contains(text(),'Update resume')]"))
         )
