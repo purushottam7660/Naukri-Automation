@@ -80,7 +80,6 @@ def get_driver():
 
     print("Launching Chrome...")
 
-    # Selenium Manager will use correct driver
     driver = webdriver.Chrome(options=chrome_options)
 
     print("Chrome launched successfully")
@@ -120,12 +119,12 @@ def login_to_naukri(driver, wait):
 
     time.sleep(2)
 
-    # Exact Login button (not OTP)
+    # exact Login button, not OTP button
     login_btn = wait.until(
-        EC.presence_of_element_located(
+        EC.element_to_be_clickable(
             (
                 By.XPATH,
-                "//button[@type='submit' and normalize-space()='Login']"
+                "//button[normalize-space()='Login' and not(contains(@class,'otpButton'))]"
             )
         )
     )
@@ -135,19 +134,14 @@ def login_to_naukri(driver, wait):
         login_btn
     )
 
-    wait.until(
-        lambda d: login_btn.is_displayed() and login_btn.is_enabled()
-    )
+    time.sleep(1)
 
     take_screenshot(driver, "04_login_button_found")
 
-    try:
-        login_btn.click()
-    except Exception:
-        driver.execute_script(
-            "arguments[0].click();",
-            login_btn
-        )
+    driver.execute_script(
+        "arguments[0].click();",
+        login_btn
+    )
 
     print("Login button clicked")
 
