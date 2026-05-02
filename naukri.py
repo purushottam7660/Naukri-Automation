@@ -7,7 +7,6 @@ from datetime import datetime
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
@@ -16,10 +15,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 # ==============================
-# UTF-8 FIX
+# UTF-8
 # ==============================
 os.environ["PYTHONIOENCODING"] = "utf-8"
-sys.stdout.reconfigure(encoding='utf-8')
+sys.stdout.reconfigure(encoding="utf-8")
 
 # ==============================
 # CONFIG
@@ -35,6 +34,13 @@ RESUME_PREFIX = "Purushottam_Kumar_Resume"
 SCREENSHOT_DIR = "screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
+# persistent profile (important)
+PROFILE_DIR = os.path.abspath("chrome_profile")
+
+LOGIN_URL = "https://www.naukri.com/nlogin/login"
+PROFILE_URL = "https://www.naukri.com/mnjuser/profile"
+
+
 # ==============================
 # SCREENSHOT
 # ==============================
@@ -43,13 +49,15 @@ def snap(driver, name):
     driver.save_screenshot(path)
     print("[SCREENSHOT]", path)
 
+
 # ==============================
 # HUMAN TYPING
 # ==============================
 def type_like_human(element, text):
     for ch in text:
         element.send_keys(ch)
-        time.sleep(random.uniform(0.05, 0.15))
+        time.sleep(random.uniform(0.08, 0.18))
+
 
 # ==============================
 # RESUME GENERATION
@@ -68,98 +76,72 @@ def generate_resume():
     print("[SUCCESS] Resume ready:", path)
     return os.path.abspath(path)
 
+
 # ==============================
-# DRIVER SETUP
+# DRIVER
 # ==============================
 def get_driver():
     options = Options()
 
-    # ==========================
-    # CORE SETTINGS
-    # ==========================
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
+    # visible browser is safer than headless
+    # options.add_argument("--headless=new")
+
     options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--no-sandbox")
 
-    # ==========================
-    # FORCE CLEAN SESSION
-    # ==========================
-    options.add_argument("--incognito")  # ✅ no cookies stored
-    options.add_argument("--disable-application-cache")
-    options.add_argument("--disable-cache")
-    options.add_argument("--disk-cache-size=0")
+    # persistent browser profile
+    options.add_argument(f"--user-data-dir={PROFILE_DIR}")
 
-    # ==========================
-    # USER AGENT
-    # ==========================
     options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/147.0.0.0 Safari/537.36"
     )
 
-    options.add_argument("--lang=en-US,en;q=0.9")
-
-    # ==========================
-    # PROXY (if any)
-    # ==========================
     if PROXY:
-        print("[INFO] Proxy:", PROXY)
+        print("[INFO] Using proxy:", PROXY)
         options.add_argument(f"--proxy-server={PROXY}")
 
-    # ==========================
-    # DRIVER INIT
-    # ==========================
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
 
-    # ==========================
-    # EXTRA CLEAN BROWSER STATE
-    # ==========================
-    try:
-        driver.execute_cdp_cmd("Network.enable", {})
-        driver.execute_cdp_cmd("Network.clearBrowserCookies", {})
-        driver.execute_cdp_cmd("Network.clearBrowserCache", {})
-    except:
-        pass
-
-    # ==========================
-    # REMOVE AUTOMATION FLAGS
-    # ==========================
-    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": """
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-
-            window.chrome = { runtime: {} };
-
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
-
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en']
-            });
-        """
-    })
-
     return driver
 
+
 # ==============================
-# LOGIN (FULL FIXED VERSION)
+# CHECK LOGIN
+# ==============================
+def already_logged_in(driver):
+    driver.get(PROFILE_URL)
+    time.sleep(4)
+
+    url = driver.current_url.lower()
+
+    if "login" not in url:
+        print("[INFO] Already logged in")
+        return True
+
+    return False
+
+
+# ==============================
+# LOGIN
 # ==============================
 def login(driver, wait):
     print("[INFO] Opening login page")
-    driver.get("https://www.naukri.com/nlogin/login")
+    driver.get(LOGIN_URL)
     time.sleep(4)
     snap(driver, "1_login_page")
 
     try:
-        email = wait.until(EC.element_to_be_clickable((By.ID, "usernameField")))
-        password = wait.until(EC.element_to_be_clickable((By.ID, "passwordField")))
+        email = wait.until(
+            EC.element_to_be_clickable((By.ID, "usernameField"))
+        )
+
+        password = wait.until(
+            EC.element_to_be_clickable((By.ID, "passwordField"))
+        )
 
         email.clear()
         type_like_human(email, EMAIL)
@@ -169,77 +151,19 @@ def login(driver, wait):
         type_like_human(password, PASSWORD)
         snap(driver, "3_password_filled")
 
-        # ==========================================
-        # ✅ MULTI-FALLBACK LOGIN BUTTON CLICK
-        # ==========================================
-
-        login_btn = None
-
-        # ==========================
-        # 1st: Blue UI login button (latest UI)
-        # ==========================
-        try:
-            login_btn = driver.find_element(
-                By.CSS_SELECTOR,
-                "button.waves-effect.waves-light.btn-large.btn-block.btn-bold.blue-btn.textTransform"
-            )
-            print("[INFO] Found blue UI login button")
-        except:
-            print("[WARN] Blue UI login button not found")
-        
-        # ==========================
-        # 2nd: Text-based fallback
-        # ==========================
-        if not login_btn:
-            try:
-                login_btn = driver.find_element(
+        login_btn = wait.until(
+            EC.element_to_be_clickable(
+                (
                     By.XPATH,
-                    "//button[contains(text(),'Login') or contains(.,'Login')]"
+                    "//button[contains(., 'Login')]"
                 )
-                print("[INFO] Found text-based login button")
-            except:
-                print("[WARN] Text-based login button not found")
-        
-        # ==========================
-        # 3rd: Primary selector (old UI)
-        # ==========================
-        if not login_btn:
-            try:
-                login_btn = driver.find_element(
-                    By.CSS_SELECTOR,
-                    "button.btn-primary.loginButton"
-                )
-                print("[INFO] Found primary login button")
-            except:
-                print("[WARN] Primary login button not found")
+            )
+        )
 
-# ==========================
-# CLICK SAFELY
-# ==========================
-if login_btn:
-    try:
-        # driver.execute_script("arguments[0].scrollIntoView(true);", login_btn)
+        time.sleep(random.uniform(1.0, 2.0))
         login_btn.click()
-        print("[SUCCESS] Login button clicked")
-    except:
-        print("[WARN] Normal click failed, trying JS click")
-        driver.execute_script("arguments[0].click();", login_btn)
-else:
-    print("[ERROR] No login button found in any selector")
 
-        # CLICK SAFELY
-        if login_btn:
-            try:
-                driver.execute_script("arguments[0].scrollIntoView(true);", login_btn)
-                time.sleep(1)
-                login_btn.click()
-                print("[SUCCESS] Login button clicked")
-            except:
-                print("[WARN] Normal click failed, using JS click")
-                driver.execute_script("arguments[0].click();", login_btn)
-        else:
-            print("[FATAL] Login button not found")
-            return False
+        print("[SUCCESS] Login clicked")
 
     except Exception as e:
         print("[ERROR] Login flow failed:", e)
@@ -249,46 +173,64 @@ else:
     time.sleep(6)
     snap(driver, "4_after_login")
 
-    if "login" not in driver.current_url:
-        print("[SUCCESS] Login successful")
-        return True
-    else:
-        print("[ERROR] Login failed / OTP triggered")
-        snap(driver, "login_failed")
+    page = driver.page_source.lower()
+
+    if "otp" in page:
+        print("[ERROR] OTP triggered")
         return False
 
+    if "login" not in driver.current_url.lower():
+        print("[SUCCESS] Login successful")
+        return True
+
+    print("[ERROR] Login failed")
+    return False
+
+
 # ==============================
-# RESUME UPLOAD
+# UPLOAD RESUME
 # ==============================
 def upload_resume(driver, wait, resume_path):
     print("[INFO] Opening profile page")
 
-    driver.get("https://www.naukri.com/mnjuser/profile")
+    driver.get(PROFILE_URL)
     time.sleep(5)
     snap(driver, "5_profile")
 
     try:
         update_btn = wait.until(
-            EC.element_to_be_clickable((By.XPATH, "//span[contains(text(),'Update resume')]"))
+            EC.element_to_be_clickable(
+                (
+                    By.XPATH,
+                    "//span[contains(text(),'Update resume')]"
+                )
+            )
         )
-        update_btn.click()
 
+        update_btn.click()
         time.sleep(2)
         snap(driver, "6_popup")
 
         upload = wait.until(
-            EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
+            EC.presence_of_element_located(
+                (
+                    By.XPATH,
+                    "//input[@type='file']"
+                )
+            )
         )
 
         upload.send_keys(resume_path)
-        time.sleep(3)
 
+        time.sleep(4)
         snap(driver, "7_uploaded")
+
         print("[SUCCESS] Resume uploaded")
 
     except Exception as e:
         print("[ERROR] Upload failed:", e)
         snap(driver, "upload_error")
+
 
 # ==============================
 # MAIN
@@ -303,21 +245,24 @@ def main():
     resume_path = generate_resume()
 
     driver = get_driver()
-    wait = WebDriverWait(driver, 120)
+    wait = WebDriverWait(driver, 60)
 
     try:
         snap(driver, "start")
 
-        for i in range(3):
-            print("[INFO] Attempt", i + 1)
+        # first try existing session
+        if already_logged_in(driver):
+            upload_resume(driver, wait, resume_path)
+            snap(driver, "success")
+            return
 
-            if login(driver, wait):
-                time.sleep(3)
-                upload_resume(driver, wait, resume_path)
-                snap(driver, "success")
-                break
-            else:
-                time.sleep(5)
+        # single login attempt only
+        if login(driver, wait):
+            upload_resume(driver, wait, resume_path)
+            snap(driver, "success")
+        else:
+            print("[ERROR] Could not login. OTP probably required.")
+            snap(driver, "login_failed")
 
     except Exception as e:
         print("[ERROR]", e)
@@ -326,6 +271,7 @@ def main():
     finally:
         driver.quit()
         print("===== DONE =====")
+
 
 if __name__ == "__main__":
     main()
