@@ -61,11 +61,11 @@ def get_driver():
     chrome_options = Options()
 
     chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--incognito")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--incognito")
     chrome_options.add_argument("--disable-application-cache")
     chrome_options.add_argument("--disable-cache")
     chrome_options.add_argument("--disk-cache-size=0")
@@ -80,7 +80,7 @@ def get_driver():
 
     print("Launching Chrome...")
 
-    # Selenium Manager auto-downloads correct driver
+    # Selenium Manager will use correct driver
     driver = webdriver.Chrome(options=chrome_options)
 
     print("Chrome launched successfully")
@@ -96,7 +96,7 @@ def login_to_naukri(driver, wait):
 
     driver.get("https://www.naukri.com/nlogin/login")
 
-    time.sleep(3)
+    time.sleep(4)
 
     take_screenshot(driver, "01_login_page")
 
@@ -104,26 +104,28 @@ def login_to_naukri(driver, wait):
         EC.presence_of_element_located((By.ID, "usernameField"))
     )
 
-    # email
+    # Email
     email_field = driver.find_element(By.ID, "usernameField")
     email_field.clear()
     email_field.send_keys(EMAIL)
 
     take_screenshot(driver, "02_email_entered")
 
-    # password
+    # Password
     password_field = driver.find_element(By.ID, "passwordField")
     password_field.clear()
     password_field.send_keys(PASSWORD)
 
     take_screenshot(driver, "03_password_entered")
 
-    # real login button only
+    time.sleep(2)
+
+    # Exact Login button (not OTP)
     login_btn = wait.until(
         EC.presence_of_element_located(
             (
                 By.XPATH,
-                "//button[.//span[normalize-space()='Login']]"
+                "//button[@type='submit' and normalize-space()='Login']"
             )
         )
     )
@@ -184,7 +186,7 @@ def upload_resume(driver, wait, resume_path):
 
 
 # ==============================
-# FUNCTION: Main Upload Flow
+# FUNCTION: Upload Flow
 # ==============================
 def upload_to_naukri(resume_path):
     driver = get_driver()
