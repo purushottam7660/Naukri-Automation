@@ -37,6 +37,15 @@ def take_screenshot(driver, name):
 
 
 # ==============================
+# FUNCTION: WAIT WITH SCREENSHOT
+# ==============================
+def sleep_with_screenshot(driver, seconds, prefix):
+    take_screenshot(driver, f"{prefix}_before_wait")
+    time.sleep(seconds)
+    take_screenshot(driver, f"{prefix}_after_wait")
+
+
+# ==============================
 # FUNCTION: Generate Resume
 # ==============================
 def generate_resume():
@@ -72,9 +81,33 @@ def get_driver():
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
+    chrome_options.add_argument(
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/148.0.7778.97 Safari/537.36"
+    )
+
+    proxy = os.getenv("HTTP_PROXY")
+    if proxy:
+        chrome_options.add_argument(f"--proxy-server={proxy}")
+        print(f"Using custom proxy: {proxy}")
+    else:
+        print("Using default network route")
+
     print("Launching Chrome...")
 
     driver = webdriver.Chrome(options=chrome_options)
+
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+            """
+        },
+    )
 
     print("Chrome launched successfully")
 
@@ -142,13 +175,15 @@ def find_login_button(driver):
 
 
 # ==============================
-# FUNCTION: CLICK LOGIN DIFFERENT WAYS
+# FUNCTION: CLICK LOGIN
 # ==============================
 def click_login(driver, login_btn, attempt):
     driver.execute_script(
         "arguments[0].scrollIntoView({block:'center'});",
         login_btn
     )
+
+    take_screenshot(driver, f"attempt_{attempt}_login_button_found")
 
     time.sleep(1)
 
@@ -183,6 +218,8 @@ def click_login(driver, login_btn, attempt):
     else:
         driver.execute_script("arguments[0].click();", login_btn)
 
+    take_screenshot(driver, f"attempt_{attempt}_login_clicked")
+
 
 # ==============================
 # FUNCTION: CHECK LOGIN SUCCESS
@@ -208,24 +245,32 @@ def login_to_naukri(driver):
 
         driver.get("https://www.naukri.com/nlogin/login")
 
-        time.sleep(5)
-
-        take_screenshot(driver, f"attempt_{attempt}_01_login_page")
+        sleep_with_screenshot(
+            driver,
+            5,
+            f"attempt_{attempt}_page_load"
+        )
 
         try:
             email_field, password_field = find_login_fields(driver)
 
+            take_screenshot(driver, f"attempt_{attempt}_fields_found")
+
             email_field.clear()
             email_field.send_keys(EMAIL)
 
-            take_screenshot(driver, f"attempt_{attempt}_02_email")
+            take_screenshot(driver, f"attempt_{attempt}_email_entered")
 
             password_field.clear()
             password_field.send_keys(PASSWORD)
 
-            take_screenshot(driver, f"attempt_{attempt}_03_password")
+            take_screenshot(driver, f"attempt_{attempt}_password_entered")
 
-            time.sleep(2)
+            sleep_with_screenshot(
+                driver,
+                2,
+                f"attempt_{attempt}_before_click"
+            )
 
             login_btn = find_login_button(driver)
 
@@ -234,25 +279,33 @@ def login_to_naukri(driver):
 
             click_login(driver, login_btn, attempt)
 
-            print("Login clicked")
-
-            time.sleep(8)
-
-            take_screenshot(driver, f"attempt_{attempt}_04_after_click")
+            sleep_with_screenshot(
+                driver,
+                8,
+                f"attempt_{attempt}_after_click"
+            )
 
             if login_success(driver):
+                take_screenshot(driver, f"attempt_{attempt}_login_success")
                 print("Login successful")
                 return True
 
+            take_screenshot(driver, f"attempt_{attempt}_login_not_completed")
             print("Login not completed, retrying...")
 
         except TimeoutException:
+            take_screenshot(driver, f"attempt_{attempt}_timeout")
             print("Timeout during login attempt")
 
         except Exception as e:
+            take_screenshot(driver, f"attempt_{attempt}_error")
             print("Login attempt failed:", e)
 
-        time.sleep(3)
+        sleep_with_screenshot(
+            driver,
+            3,
+            f"attempt_{attempt}_retry_wait"
+        )
 
     raise Exception("Unable to login after retries")
 
@@ -265,11 +318,13 @@ def upload_resume(driver, resume_path):
 
     driver.get("https://www.naukri.com/mnjuser/profile")
 
+    sleep_with_screenshot(
+        driver,
+        4,
+        "profile_page_load"
+    )
+
     wait = WebDriverWait(driver, 30)
-
-    time.sleep(4)
-
-    take_screenshot(driver, "05_profile_page")
 
     upload_input = wait.until(
         EC.presence_of_element_located(
@@ -277,13 +332,17 @@ def upload_resume(driver, resume_path):
         )
     )
 
-    take_screenshot(driver, "06_upload_input")
+    take_screenshot(driver, "upload_input_found")
 
     upload_input.send_keys(resume_path)
 
-    time.sleep(4)
+    sleep_with_screenshot(
+        driver,
+        4,
+        "after_resume_upload"
+    )
 
-    take_screenshot(driver, "07_resume_uploaded")
+    take_screenshot(driver, "resume_uploaded")
 
     print("Resume uploaded successfully")
 
@@ -301,7 +360,7 @@ def upload_to_naukri(resume_path):
 
         upload_resume(driver, resume_path)
 
-        take_screenshot(driver, "08_final_state")
+        take_screenshot(driver, "final_state")
 
     finally:
         driver.quit()
