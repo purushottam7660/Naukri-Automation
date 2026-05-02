@@ -5,9 +5,7 @@ from datetime import datetime
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
@@ -62,7 +60,7 @@ def generate_resume():
 def get_driver():
     chrome_options = Options()
 
-    chrome_options.add_argument("--headless=old")
+    chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
@@ -71,20 +69,19 @@ def get_driver():
     chrome_options.add_argument("--disable-application-cache")
     chrome_options.add_argument("--disable-cache")
     chrome_options.add_argument("--disk-cache-size=0")
-    chrome_options.add_argument("--remote-debugging-port=9222")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
+        "Chrome/148.0.0.0 Safari/537.36"
     )
 
     print("Launching Chrome...")
 
-    service = Service()
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    # Selenium Manager auto-downloads correct driver
+    driver = webdriver.Chrome(options=chrome_options)
 
     print("Chrome launched successfully")
 
@@ -92,105 +89,127 @@ def get_driver():
 
 
 # ==============================
+# FUNCTION: Login
+# ==============================
+def login_to_naukri(driver, wait):
+    print("Opening Naukri login...")
+
+    driver.get("https://www.naukri.com/nlogin/login")
+
+    time.sleep(3)
+
+    take_screenshot(driver, "01_login_page")
+
+    wait.until(
+        EC.presence_of_element_located((By.ID, "usernameField"))
+    )
+
+    # email
+    email_field = driver.find_element(By.ID, "usernameField")
+    email_field.clear()
+    email_field.send_keys(EMAIL)
+
+    take_screenshot(driver, "02_email_entered")
+
+    # password
+    password_field = driver.find_element(By.ID, "passwordField")
+    password_field.clear()
+    password_field.send_keys(PASSWORD)
+
+    take_screenshot(driver, "03_password_entered")
+
+    # real login button only
+    login_btn = wait.until(
+        EC.presence_of_element_located(
+            (
+                By.XPATH,
+                "//button[.//span[normalize-space()='Login']]"
+            )
+        )
+    )
+
+    driver.execute_script(
+        "arguments[0].scrollIntoView({block:'center'});",
+        login_btn
+    )
+
+    wait.until(
+        lambda d: login_btn.is_displayed() and login_btn.is_enabled()
+    )
+
+    take_screenshot(driver, "04_login_button_found")
+
+    try:
+        login_btn.click()
+    except Exception:
+        driver.execute_script(
+            "arguments[0].click();",
+            login_btn
+        )
+
+    print("Login button clicked")
+
+    time.sleep(6)
+
+    take_screenshot(driver, "05_after_login")
+
+
+# ==============================
 # FUNCTION: Upload Resume
+# ==============================
+def upload_resume(driver, wait, resume_path):
+    print("Opening profile page...")
+
+    driver.get("https://www.naukri.com/mnjuser/profile")
+
+    time.sleep(4)
+
+    take_screenshot(driver, "06_profile_page")
+
+    upload_input = wait.until(
+        EC.presence_of_element_located(
+            (By.XPATH, "//input[@type='file']")
+        )
+    )
+
+    take_screenshot(driver, "07_upload_input_found")
+
+    upload_input.send_keys(resume_path)
+
+    time.sleep(4)
+
+    take_screenshot(driver, "08_resume_uploaded")
+
+    print("Resume uploaded successfully")
+
+
+# ==============================
+# FUNCTION: Main Upload Flow
 # ==============================
 def upload_to_naukri(resume_path):
     driver = get_driver()
-    wait = WebDriverWait(driver, 20)
+    wait = WebDriverWait(driver, 30)
 
     try:
         take_screenshot(driver, "00_browser_started")
 
-        print("Opening Naukri login...")
+        login_to_naukri(driver, wait)
 
-        driver.get("https://www.naukri.com/nlogin/login")
-
-        take_screenshot(driver, "01_login_page")
-
-        wait.until(
-            EC.presence_of_element_located((By.ID, "usernameField"))
-        )
-
-        # Enter email
-        email_field = driver.find_element(By.ID, "usernameField")
-        email_field.send_keys(EMAIL)
-
-        take_screenshot(driver, "02_email_entered")
-
-        # Enter password
-        password_field = driver.find_element(By.ID, "passwordField")
-        password_field.send_keys(PASSWORD)
-
-        take_screenshot(driver, "03_password_entered")
-        
-        login_btn = wait.until(
-            EC.element_to_be_clickable(
-                (
-                    By.XPATH,
-                    "//button[.//span[normalize-space()='Login']]"
-                )
-            )
-        )
-        
-        take_screenshot(driver, "04_login_button_found")
-        
-        driver.execute_script(
-            "arguments[0].scrollIntoView({block:'center'});",
-            login_btn
-        )
-        
-        time.sleep(1)
-        
-        try:
-            login_btn.click()
-        except Exception:
-            driver.execute_script(
-                "arguments[0].click();",
-                login_btn
-            )
-        
-        print("Login button clicked")
-        
-        time.sleep(6)
-        
-        take_screenshot(driver, "05_after_login")
-
-        # Open profile page
-        driver.get("https://www.naukri.com/mnjuser/profile")
+        upload_resume(driver, wait, resume_path)
 
         time.sleep(3)
 
-        take_screenshot(driver, "05_profile_page")
-
-        # Wait for upload input
-        upload_input = wait.until(
-            EC.presence_of_element_located(
-                (By.XPATH, "//input[@type='file']")
-            )
-        )
-
-        take_screenshot(driver, "06_upload_input_found")
-
-        # Upload resume
-        upload_input.send_keys(resume_path)
-
-        time.sleep(3)
-
-        take_screenshot(driver, "07_resume_uploaded")
-
-        print("✅ Resume uploaded successfully!")
-
-        time.sleep(5)
-
-        take_screenshot(driver, "08_final_state")
+        take_screenshot(driver, "09_final_state")
 
     except Exception as e:
-        print("❌ Error:", e)
+        print("Error:", e)
 
         try:
             take_screenshot(driver, "error")
         except Exception:
             pass
+
+        raise
 
     finally:
         driver.quit()
