@@ -5,7 +5,8 @@ from datetime import datetime
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.edge.options import Options as EdgeOptions
+from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
@@ -55,26 +56,53 @@ def generate_resume():
 
 
 # ==============================
-# FUNCTION: Setup Chrome Driver
+# FUNCTION: EDGE DRIVER
 # ==============================
-def get_driver():
-    chrome_options = Options()
+def get_edge_driver():
+    options = EdgeOptions()
 
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--incognito")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-application-cache")
-    chrome_options.add_argument("--disable-cache")
-    chrome_options.add_argument("--disk-cache-size=0")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--headless=new")
+    options.add_argument("--inprivate")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-application-cache")
+    options.add_argument("--disable-cache")
+    options.add_argument("--disk-cache-size=0")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+
+    print("Launching Microsoft Edge...")
+
+    driver = webdriver.Edge(options=options)
+
+    print("Microsoft Edge launched successfully")
+
+    return driver
+
+
+# ==============================
+# FUNCTION: CHROME DRIVER
+# ==============================
+def get_chrome_driver():
+    options = ChromeOptions()
+
+    options.add_argument("--headless=new")
+    options.add_argument("--incognito")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-application-cache")
+    options.add_argument("--disable-cache")
+    options.add_argument("--disk-cache-size=0")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-blink-features=AutomationControlled")
 
     print("Launching Chrome...")
 
-    driver = webdriver.Chrome(options=chrome_options)
+    driver = webdriver.Chrome(options=options)
 
     print("Chrome launched successfully")
 
@@ -82,7 +110,7 @@ def get_driver():
 
 
 # ==============================
-# FUNCTION: CLICK REAL LOGIN BUTTON
+# FUNCTION: CLICK EXACT LOGIN BUTTON
 # ==============================
 def click_real_login_button(driver):
     buttons = driver.find_elements(By.XPATH, "//button[@type='submit']")
@@ -104,7 +132,7 @@ def click_real_login_button(driver):
                     btn
                 )
 
-                print("Clicked exact Login button")
+                print("Clicked Login button")
                 return True
 
         except Exception:
@@ -114,16 +142,16 @@ def click_real_login_button(driver):
 
 
 # ==============================
-# FUNCTION: Login
+# FUNCTION: LOGIN
 # ==============================
-def login_to_naukri(driver, wait):
-    print("Opening Naukri login...")
+def login_to_naukri(driver, wait, browser_name):
+    print(f"Opening Naukri login using {browser_name}...")
 
     driver.get("https://www.naukri.com/nlogin/login")
 
     time.sleep(4)
 
-    take_screenshot(driver, "01_login_page")
+    take_screenshot(driver, f"{browser_name}_01_login_page")
 
     wait.until(
         EC.presence_of_element_located((By.ID, "usernameField"))
@@ -133,37 +161,42 @@ def login_to_naukri(driver, wait):
     email_field.clear()
     email_field.send_keys(EMAIL)
 
-    take_screenshot(driver, "02_email_entered")
+    take_screenshot(driver, f"{browser_name}_02_email_entered")
 
     password_field = driver.find_element(By.ID, "passwordField")
     password_field.clear()
     password_field.send_keys(PASSWORD)
 
-    take_screenshot(driver, "03_password_entered")
+    take_screenshot(driver, f"{browser_name}_03_password_entered")
 
     time.sleep(2)
 
-    take_screenshot(driver, "04_before_login_click")
-
     if not click_real_login_button(driver):
-        raise Exception("Exact Login button not found")
+        raise Exception("Login button not found")
 
     time.sleep(6)
 
-    take_screenshot(driver, "05_after_login")
+    take_screenshot(driver, f"{browser_name}_04_after_login")
+
+    current_url = driver.current_url.lower()
+
+    if "login" in current_url:
+        raise Exception("Login did not complete")
+
+    print(f"Login successful using {browser_name}")
 
 
 # ==============================
-# FUNCTION: Upload Resume
+# FUNCTION: UPLOAD RESUME
 # ==============================
-def upload_resume(driver, wait, resume_path):
+def upload_resume(driver, wait, resume_path, browser_name):
     print("Opening profile page...")
 
     driver.get("https://www.naukri.com/mnjuser/profile")
 
     time.sleep(4)
 
-    take_screenshot(driver, "06_profile_page")
+    take_screenshot(driver, f"{browser_name}_05_profile_page")
 
     upload_input = wait.until(
         EC.presence_of_element_located(
@@ -171,48 +204,58 @@ def upload_resume(driver, wait, resume_path):
         )
     )
 
-    take_screenshot(driver, "07_upload_input_found")
+    take_screenshot(driver, f"{browser_name}_06_upload_input")
 
     upload_input.send_keys(resume_path)
 
     time.sleep(4)
 
-    take_screenshot(driver, "08_resume_uploaded")
+    take_screenshot(driver, f"{browser_name}_07_resume_uploaded")
 
     print("Resume uploaded successfully")
 
 
 # ==============================
-# FUNCTION: Upload Flow
+# FUNCTION: RUN ONE BROWSER
 # ==============================
-def upload_to_naukri(resume_path):
-    driver = get_driver()
+def run_browser(driver_factory, browser_name, resume_path):
+    driver = driver_factory()
     wait = WebDriverWait(driver, 30)
 
     try:
-        take_screenshot(driver, "00_browser_started")
+        take_screenshot(driver, f"{browser_name}_00_started")
 
-        login_to_naukri(driver, wait)
+        login_to_naukri(driver, wait, browser_name)
 
-        upload_resume(driver, wait, resume_path)
+        upload_resume(driver, wait, resume_path, browser_name)
 
-        time.sleep(3)
+        take_screenshot(driver, f"{browser_name}_08_final")
 
-        take_screenshot(driver, "09_final_state")
-
-    except Exception as e:
-        print("Error:", e)
-
-        try:
-            take_screenshot(driver, "error")
-        except Exception:
-            pass
-
-        raise
+        return True
 
     finally:
         driver.quit()
-        print("Browser closed")
+        print(f"{browser_name} closed")
+
+
+# ==============================
+# FUNCTION: MAIN FLOW
+# ==============================
+def upload_to_naukri(resume_path):
+    try:
+        print("Trying Microsoft Edge first...")
+        return run_browser(get_edge_driver, "edge", resume_path)
+
+    except Exception as e:
+        print("Edge failed:", e)
+
+    try:
+        print("Retrying with Chrome...")
+        return run_browser(get_chrome_driver, "chrome", resume_path)
+
+    except Exception as e:
+        print("Chrome failed:", e)
+        raise
 
 
 # ==============================
