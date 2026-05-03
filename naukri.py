@@ -126,11 +126,12 @@ def LoadNaukri():
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-blink-features=AutomationControlled")
-
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-
     options.add_argument(f"--user-agent={USER_AGENT}")
+
+    if os.getenv("GITHUB_ACTIONS"):
+        options.add_argument("--headless=new")
 
     proxy = (
         os.getenv("HTTPS_PROXY")
@@ -149,7 +150,6 @@ def LoadNaukri():
     )
 
     driver.implicitly_wait(5)
-
     driver.get(NAUKRI_LOGIN_URL)
 
     take_screenshot(driver, "01_page_loaded")
@@ -176,10 +176,8 @@ def login_success(driver):
 
 
 # =========================================================
-# LOGIN BUTTON
-# IMPORTANT:
-# Select ONLY the password login button
-# NOT the "Use OTP to Login" button
+# FIND LOGIN BUTTON
+# avoids OTP button
 # =========================================================
 def find_login_button(driver):
     xpath = (
@@ -244,22 +242,34 @@ def naukriLogin():
         time.sleep(1)
 
         try:
-            wait.until(lambda d: login_btn.is_displayed() and login_btn.is_enabled())
-            login_btn.click()
-            log_msg("Login button clicked")
-        except Exception:
             driver.execute_script("arguments[0].click();", login_btn)
-            log_msg("JS click used")
+            log_msg("Login button clicked")
+        except Exception as e:
+            log_msg(f"Click failed: {e}")
 
         take_screenshot(driver, "05_login_clicked")
 
-        time.sleep(12)
+        time.sleep(8)
 
+        # page may re-render after click
         if NAUKRI_LOGIN_URL in driver.current_url:
-            log_msg("Still on login page. Trying ENTER.")
-            password.send_keys(Keys.ENTER)
-            take_screenshot(driver, "06_enter_pressed")
-            time.sleep(10)
+            log_msg("Still on login page after click")
+
+            try:
+                password_retry = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "passwordField"))
+                )
+
+                password_retry.send_keys(Keys.ENTER)
+
+                log_msg("ENTER pressed using fresh password element")
+
+                take_screenshot(driver, "06_enter_pressed")
+
+                time.sleep(8)
+
+            except Exception as e:
+                log_msg(f"Retry enter failed: {e}")
 
         take_screenshot(driver, "07_after_login")
 
