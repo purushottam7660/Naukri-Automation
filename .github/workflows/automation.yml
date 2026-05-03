@@ -32,7 +32,6 @@ jobs:
         env:
           NAUKRI_EMAIL: ${{ secrets.NAUKRI_EMAIL }}
           NAUKRI_PASSWORD: ${{ secrets.NAUKRI_PASSWORD }}
-          HTTPS_PROXY: ${{ secrets.PROXY }}
         run: python naukri.py
 
       - name: Upload Debug Files
