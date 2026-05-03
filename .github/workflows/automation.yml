@@ -34,9 +34,12 @@ jobs:
           NAUKRI_PASSWORD: ${{ secrets.NAUKRI_PASSWORD }}
         run: python naukri.py
 
-      - name: Upload Screenshots
+      - name: Upload Debug Files
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: naukri-screenshots
-          path: screenshots/
+          name: naukri-debug-files
+          path: |
+            screenshots/
+            html_dump/
+            naukri.log
