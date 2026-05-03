@@ -14,11 +14,12 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 
-# ==============================
-# BASE PATHS
-# ==============================
+# =========================================================
+# PATHS
+# =========================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 SOURCE_RESUME = os.path.join(BASE_DIR, "Purushottam_Kumar_CV.pdf")
@@ -32,9 +33,9 @@ os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 os.makedirs(DUMP_DIR, exist_ok=True)
 
 
-# ==============================
-# USER CONFIGURATION
-# ==============================
+# =========================================================
+# USER CONFIG
+# =========================================================
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
 
@@ -49,20 +50,16 @@ USER_AGENT = (
     "Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0"
 )
 
-LOGIN_BUTTON_XPATH = (
-    "//button[normalize-space()='Login' or .//*[normalize-space()='Login']]"
-)
-
 logging.basicConfig(
-    level=logging.INFO,
     filename=LOG_FILE,
-    format="%(asctime)s : %(message)s",
+    level=logging.INFO,
+    format="%(asctime)s : %(message)s"
 )
 
 
-# ==============================
+# =========================================================
 # LOGGING
-# ==============================
+# =========================================================
 def log_msg(message):
     print(message)
     logging.info(message)
@@ -70,15 +67,15 @@ def log_msg(message):
 
 def catch(error):
     _, _, exc_tb = sys.exc_info()
-    line_no = str(exc_tb.tb_lineno)
-    msg = "%s : %s at Line %s." % (type(error), error, line_no)
+    line_no = exc_tb.tb_lineno if exc_tb else "?"
+    msg = f"{type(error)} : {error} at Line {line_no}"
     print(msg)
     logging.error(msg)
 
 
-# ==============================
+# =========================================================
 # SCREENSHOT
-# ==============================
+# =========================================================
 def take_screenshot(driver, name):
     try:
         path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
@@ -88,9 +85,9 @@ def take_screenshot(driver, name):
         pass
 
 
-# ==============================
+# =========================================================
 # HTML DUMP
-# ==============================
+# =========================================================
 def dump_html(driver, name):
     try:
         path = os.path.join(DUMP_DIR, f"{name}.html")
@@ -101,32 +98,31 @@ def dump_html(driver, name):
         log_msg(f"HTML dump failed: {e}")
 
 
-# ==============================
+# =========================================================
 # RESUME
-# ==============================
+# =========================================================
 def generate_resume():
     current_date = datetime.now().strftime("%d_%b_%Y")
-    new_filename = f"{RESUME_PREFIX}_{current_date}.pdf"
-    destination_path = os.path.join(DEST_FOLDER, new_filename)
+    filename = f"{RESUME_PREFIX}_{current_date}.pdf"
+    destination = os.path.join(DEST_FOLDER, filename)
 
-    if os.path.exists(destination_path):
-        os.remove(destination_path)
+    if os.path.exists(destination):
+        os.remove(destination)
 
-    shutil.copy2(SOURCE_RESUME, destination_path)
+    shutil.copy2(SOURCE_RESUME, destination)
 
-    log_msg(f"Resume ready: {destination_path}")
+    log_msg(f"Resume ready: {destination}")
+    return os.path.abspath(destination)
 
-    return os.path.abspath(destination_path)
 
-
-# ==============================
+# =========================================================
 # CHROME
-# ==============================
+# =========================================================
 def LoadNaukri():
     options = webdriver.ChromeOptions()
 
     options.add_argument("--disable-notifications")
-    options.add_argument("--disable-popups")
+    options.add_argument("--disable-popup-blocking")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-blink-features=AutomationControlled")
@@ -146,8 +142,6 @@ def LoadNaukri():
     if proxy:
         options.add_argument(f"--proxy-server={proxy}")
         log_msg(f"Using proxy: {proxy}")
-    else:
-        log_msg("Using default proxy")
 
     driver = webdriver.Chrome(
         service=ChromeService(),
@@ -157,36 +151,17 @@ def LoadNaukri():
     driver.implicitly_wait(5)
 
     driver.get(NAUKRI_LOGIN_URL)
+
     take_screenshot(driver, "01_page_loaded")
 
     return driver
 
 
-# ==============================
-# LOGIN HELPERS
-# ==============================
-def find_login_button(driver):
-    buttons = driver.find_elements(By.XPATH, LOGIN_BUTTON_XPATH)
-
-    for btn in buttons:
-        try:
-            text = btn.text.strip().lower()
-
-            if (
-                btn.is_displayed()
-                and btn.is_enabled()
-                and text == "login"
-            ):
-                return btn
-        except Exception:
-            pass
-
-    return None
-
-
+# =========================================================
+# LOGIN SUCCESS
+# =========================================================
 def login_success(driver):
     url = driver.current_url.lower()
-    log_msg(f"Current URL after login: {url}")
 
     if "/mnjuser/homepage" in url:
         return True
@@ -194,85 +169,106 @@ def login_success(driver):
     if "/mnjuser/profile" in url:
         return True
 
+    if "/mnjuser" in url:
+        return True
+
     return False
 
 
-# ==============================
+# =========================================================
+# LOGIN BUTTON
+# IMPORTANT:
+# Select ONLY the password login button
+# NOT the "Use OTP to Login" button
+# =========================================================
+def find_login_button(driver):
+    xpath = (
+        "//form[@id='loginForm']"
+        "//button[normalize-space()='Login' and not(contains(@class,'otpButton'))]"
+    )
+
+    buttons = driver.find_elements(By.XPATH, xpath)
+
+    for btn in buttons:
+        try:
+            if btn.is_displayed() and btn.is_enabled():
+                return btn
+        except Exception:
+            pass
+
+    return None
+
+
+# =========================================================
 # LOGIN
-# ==============================
+# =========================================================
 def naukriLogin():
     driver = LoadNaukri()
 
     try:
         log_msg("Login started")
 
-        time.sleep(3)
+        wait = WebDriverWait(driver, 25)
 
-        email = driver.find_element(By.ID, "usernameField")
-        take_screenshot(driver, "02_email_found")
+        email = wait.until(
+            EC.visibility_of_element_located((By.ID, "usernameField"))
+        )
 
-        password = driver.find_element(By.ID, "passwordField")
-        take_screenshot(driver, "03_password_found")
+        password = wait.until(
+            EC.visibility_of_element_located((By.ID, "passwordField"))
+        )
 
         email.clear()
         email.send_keys(EMAIL)
-        take_screenshot(driver, "04_email_filled")
+        take_screenshot(driver, "02_email_filled")
 
         password.clear()
         password.send_keys(PASSWORD)
-        take_screenshot(driver, "05_password_filled")
+        take_screenshot(driver, "03_password_filled")
 
         time.sleep(2)
 
         login_btn = find_login_button(driver)
 
-        if login_btn:
-            take_screenshot(driver, "06_login_button_found")
-
-            driver.execute_script(
-                "arguments[0].scrollIntoView({block:'center'});",
-                login_btn
-            )
-
-            time.sleep(1)
-
-            try:
-                login_btn.click()
-                log_msg("Normal click done")
-            except Exception:
-                driver.execute_script(
-                    "arguments[0].click();",
-                    login_btn
-                )
-                log_msg("JS click done")
-
-            take_screenshot(driver, "07_login_clicked")
-
-            log_msg("Waiting 15 seconds after click")
-            time.sleep(15)
-
-        else:
+        if not login_btn:
             log_msg("Login button not found")
-            take_screenshot(driver, "06_login_button_not_found")
+            take_screenshot(driver, "04_login_button_not_found")
+            dump_html(driver, "login_button_not_found")
+            return False, driver
+
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block:'center'});",
+            login_btn
+        )
+
+        time.sleep(1)
+
+        try:
+            wait.until(lambda d: login_btn.is_displayed() and login_btn.is_enabled())
+            login_btn.click()
+            log_msg("Login button clicked")
+        except Exception:
+            driver.execute_script("arguments[0].click();", login_btn)
+            log_msg("JS click used")
+
+        take_screenshot(driver, "05_login_clicked")
+
+        time.sleep(12)
 
         if NAUKRI_LOGIN_URL in driver.current_url:
-            log_msg("Still on login page, pressing Enter")
+            log_msg("Still on login page. Trying ENTER.")
             password.send_keys(Keys.ENTER)
+            take_screenshot(driver, "06_enter_pressed")
+            time.sleep(10)
 
-            take_screenshot(driver, "08_enter_pressed")
-
-            log_msg("Waiting 15 seconds after Enter")
-            time.sleep(15)
-
-        take_screenshot(driver, "09_after_login_wait")
+        take_screenshot(driver, "07_after_login")
 
         if login_success(driver):
             log_msg("Login successful")
             return True, driver
 
-        if NAUKRI_LOGIN_URL in driver.current_url:
-            take_screenshot(driver, "10_login_failed_same_page")
-            dump_html(driver, "login_failed_dump")
+        take_screenshot(driver, "08_login_failed")
+        dump_html(driver, "login_failed")
 
         log_msg("Login failed")
         return False, driver
@@ -280,40 +276,46 @@ def naukriLogin():
     except TimeoutException as e:
         log_msg(f"Login timeout: {e}")
         take_screenshot(driver, "login_timeout")
-        dump_html(driver, "login_timeout_dump")
+        dump_html(driver, "login_timeout")
         return False, driver
 
     except Exception as e:
         log_msg(f"Login error: {e}")
         take_screenshot(driver, "login_error")
-        dump_html(driver, "login_error_dump")
+        dump_html(driver, "login_error")
         return False, driver
 
 
-# ==============================
+# =========================================================
 # UPLOAD RESUME
-# ==============================
+# =========================================================
 def UploadResume(driver, resume_path):
+    log_msg("Opening profile page")
+
     driver.get(NAUKRI_PROFILE_URL)
 
-    time.sleep(5)
-    take_screenshot(driver, "profile_page")
+    wait = WebDriverWait(driver, 30)
 
-    upload_input = WebDriverWait(driver, 30).until(
-        lambda d: d.find_element(By.XPATH, "//input[@type='file']")
+    upload_input = wait.until(
+        EC.presence_of_element_located(
+            (By.XPATH, "//input[@type='file']")
+        )
     )
+
+    take_screenshot(driver, "09_profile_loaded")
 
     upload_input.send_keys(resume_path)
 
-    time.sleep(5)
-    take_screenshot(driver, "resume_uploaded")
+    time.sleep(8)
+
+    take_screenshot(driver, "10_resume_uploaded")
 
     log_msg("Resume uploaded successfully")
 
 
-# ==============================
+# =========================================================
 # TEARDOWN
-# ==============================
+# =========================================================
 def tearDown(driver):
     if driver is None:
         return
@@ -324,18 +326,18 @@ def tearDown(driver):
         pass
 
 
-# ==============================
+# =========================================================
 # MAIN
-# ==============================
+# =========================================================
 def main():
-    log_msg("===== Naukri Automation Started =====")
+    log_msg("===== START =====")
 
     if not EMAIL or not PASSWORD:
         log_msg("Missing NAUKRI_EMAIL or NAUKRI_PASSWORD")
         raise SystemExit(1)
 
     if not os.path.exists(SOURCE_RESUME):
-        log_msg(f"Resume file not found: {SOURCE_RESUME}")
+        log_msg(f"Resume not found: {SOURCE_RESUME}")
         raise SystemExit(1)
 
     driver = None
@@ -348,7 +350,7 @@ def main():
         if status:
             UploadResume(driver, resume_path)
         else:
-            log_msg("Login failed")
+            log_msg("Login failed. Upload skipped.")
 
     except Exception as e:
         catch(e)
@@ -356,7 +358,7 @@ def main():
     finally:
         tearDown(driver)
 
-    log_msg("===== Process Completed =====")
+    log_msg("===== END =====")
 
 
 if __name__ == "__main__":
