@@ -24,10 +24,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SOURCE_RESUME = os.path.join(BASE_DIR, "Purushottam_Kumar_CV.pdf")
 DEST_FOLDER = os.path.join(BASE_DIR, "Naukri_resume")
 SCREENSHOT_DIR = os.path.join(BASE_DIR, "screenshots")
+DUMP_DIR = os.path.join(BASE_DIR, "html_dump")
 LOG_FILE = os.path.join(BASE_DIR, "naukri.log")
 
 os.makedirs(DEST_FOLDER, exist_ok=True)
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+os.makedirs(DUMP_DIR, exist_ok=True)
 
 
 # ==============================
@@ -42,13 +44,14 @@ NAUKRI_LOGIN_URL = "https://www.naukri.com/nlogin/login"
 NAUKRI_PROFILE_URL = "https://www.naukri.com/mnjuser/profile"
 
 USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0"
 )
 
 LOGIN_BUTTON_XPATH = (
     "//button[normalize-space()='Login' or .//*[normalize-space()='Login']]"
 )
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -86,6 +89,19 @@ def take_screenshot(driver, name):
 
 
 # ==============================
+# HTML DUMP
+# ==============================
+def dump_html(driver, name):
+    try:
+        path = os.path.join(DUMP_DIR, f"{name}.html")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+        log_msg(f"[HTML DUMP] {path}")
+    except Exception as e:
+        log_msg(f"HTML dump failed: {e}")
+
+
+# ==============================
 # RESUME
 # ==============================
 def generate_resume():
@@ -115,13 +131,18 @@ def LoadNaukri():
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-blink-features=AutomationControlled")
 
-    # useful for GitHub Actions / Linux
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
     options.add_argument(f"--user-agent={USER_AGENT}")
 
-    proxy = os.getenv("HTTP_PROXY")
+    proxy = (
+        os.getenv("HTTPS_PROXY")
+        or os.getenv("HTTP_PROXY")
+        or os.getenv("https_proxy")
+        or os.getenv("http_proxy")
+    )
+
     if proxy:
         options.add_argument(f"--proxy-server={proxy}")
         log_msg(f"Using proxy: {proxy}")
@@ -134,7 +155,9 @@ def LoadNaukri():
     )
 
     driver.implicitly_wait(5)
+
     driver.get(NAUKRI_LOGIN_URL)
+    take_screenshot(driver, "01_page_loaded")
 
     return driver
 
@@ -155,7 +178,6 @@ def find_login_button(driver):
                 and text == "login"
             ):
                 return btn
-
         except Exception:
             pass
 
@@ -163,8 +185,6 @@ def find_login_button(driver):
 
 
 def login_success(driver):
-    time.sleep(5)
-
     url = driver.current_url.lower()
     log_msg(f"Current URL after login: {url}")
 
@@ -186,57 +206,73 @@ def naukriLogin():
     try:
         log_msg("Login started")
 
-        time.sleep(4)
-        take_screenshot(driver, "login_page")
+        time.sleep(3)
 
         email = driver.find_element(By.ID, "usernameField")
+        take_screenshot(driver, "02_email_found")
+
         password = driver.find_element(By.ID, "passwordField")
+        take_screenshot(driver, "03_password_found")
 
         email.clear()
         email.send_keys(EMAIL)
+        take_screenshot(driver, "04_email_filled")
 
         password.clear()
         password.send_keys(PASSWORD)
-
-        take_screenshot(driver, "credentials_filled")
+        take_screenshot(driver, "05_password_filled")
 
         time.sleep(2)
 
         login_btn = find_login_button(driver)
 
         if login_btn:
-            log_msg("Login button found")
+            take_screenshot(driver, "06_login_button_found")
+
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block:'center'});",
+                login_btn
+            )
+
+            time.sleep(1)
 
             try:
-                driver.execute_script(
-                    "arguments[0].scrollIntoView({block:'center'});",
-                    login_btn
-                )
-                time.sleep(1)
-
+                login_btn.click()
+                log_msg("Normal click done")
+            except Exception:
                 driver.execute_script(
                     "arguments[0].click();",
                     login_btn
                 )
+                log_msg("JS click done")
 
-                log_msg("Clicked Login button")
+            take_screenshot(driver, "07_login_clicked")
 
-            except Exception as e:
-                log_msg(f"Login button click failed: {e}")
-                log_msg("Trying Enter key")
-                password.send_keys(Keys.ENTER)
+            log_msg("Waiting 15 seconds after click")
+            time.sleep(15)
 
         else:
-            log_msg("Login button not found, using Enter key")
+            log_msg("Login button not found")
+            take_screenshot(driver, "06_login_button_not_found")
+
+        if NAUKRI_LOGIN_URL in driver.current_url:
+            log_msg("Still on login page, pressing Enter")
             password.send_keys(Keys.ENTER)
 
-        take_screenshot(driver, "after_login_action")
+            take_screenshot(driver, "08_enter_pressed")
 
-        time.sleep(8)
+            log_msg("Waiting 15 seconds after Enter")
+            time.sleep(15)
+
+        take_screenshot(driver, "09_after_login_wait")
 
         if login_success(driver):
             log_msg("Login successful")
             return True, driver
+
+        if NAUKRI_LOGIN_URL in driver.current_url:
+            take_screenshot(driver, "10_login_failed_same_page")
+            dump_html(driver, "login_failed_dump")
 
         log_msg("Login failed")
         return False, driver
@@ -244,11 +280,13 @@ def naukriLogin():
     except TimeoutException as e:
         log_msg(f"Login timeout: {e}")
         take_screenshot(driver, "login_timeout")
+        dump_html(driver, "login_timeout_dump")
         return False, driver
 
     except Exception as e:
         log_msg(f"Login error: {e}")
         take_screenshot(driver, "login_error")
+        dump_html(driver, "login_error_dump")
         return False, driver
 
 
