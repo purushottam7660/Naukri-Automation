@@ -1,145 +1,325 @@
+#! python3
+# -*- coding: utf-8 -*-
+
 import os
-import shutil
+import sys
 import time
+import shutil
+import logging
 from datetime import datetime
 
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+
+
+# ==============================
+# BASE PATHS
+# ==============================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+SOURCE_RESUME = os.path.join(BASE_DIR, "Purushottam_Kumar_CV.pdf")
+DEST_FOLDER = os.path.join(BASE_DIR, "Naukri_resume")
+SCREENSHOT_DIR = os.path.join(BASE_DIR, "screenshots")
+LOG_FILE = os.path.join(BASE_DIR, "naukri.log")
+
+os.makedirs(DEST_FOLDER, exist_ok=True)
+os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
 
 # ==============================
 # USER CONFIGURATION
 # ==============================
-
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
 
-SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
-DEST_FOLDER = "Naukri_resume"
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
 
+NAUKRI_LOGIN_URL = "https://www.naukri.com/nlogin/login"
+NAUKRI_PROFILE_URL = "https://www.naukri.com/mnjuser/profile"
+
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0"
+)
+
+LOGIN_BUTTON_XPATH = (
+    "//button[normalize-space()='Login' or .//*[normalize-space()='Login']]"
+)
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    filename=LOG_FILE,
+    format="%(asctime)s : %(message)s",
+)
+
 
 # ==============================
-# FUNCTION: Generate Resume
+# LOGGING
+# ==============================
+def log_msg(message):
+    print(message)
+    logging.info(message)
+
+
+def catch(error):
+    _, _, exc_tb = sys.exc_info()
+    line_no = str(exc_tb.tb_lineno)
+    msg = "%s : %s at Line %s." % (type(error), error, line_no)
+    print(msg)
+    logging.error(msg)
+
+
+# ==============================
+# SCREENSHOT
+# ==============================
+def take_screenshot(driver, name):
+    try:
+        path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
+        driver.save_screenshot(path)
+        log_msg(f"[SCREENSHOT] {path}")
+    except Exception:
+        pass
+
+
+# ==============================
+# RESUME
 # ==============================
 def generate_resume():
-    os.makedirs(DEST_FOLDER, exist_ok=True)
-
     current_date = datetime.now().strftime("%d_%b_%Y")
     new_filename = f"{RESUME_PREFIX}_{current_date}.pdf"
     destination_path = os.path.join(DEST_FOLDER, new_filename)
 
     if os.path.exists(destination_path):
         os.remove(destination_path)
-        print("Old resume replaced")
 
     shutil.copy2(SOURCE_RESUME, destination_path)
 
-    # ✅ FIX: Convert to absolute path before returning
-    absolute_path = os.path.abspath(destination_path)
-    print(f"Resume ready: {absolute_path}")
+    log_msg(f"Resume ready: {destination_path}")
 
-    return absolute_path
+    return os.path.abspath(destination_path)
 
 
 # ==============================
-# FUNCTION: Setup Chrome Driver
+# CHROME
 # ==============================
-def get_driver():
-    chrome_options = Options()
+def LoadNaukri():
+    options = webdriver.ChromeOptions()
 
-    # ✅ STABLE headless mode (fix crash)
-    chrome_options.add_argument("--headless=new")
+    options.add_argument("--disable-notifications")
+    options.add_argument("--disable-popups")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-blink-features=AutomationControlled")
 
-    # ✅ Stability (Cleaned up duplicate arguments)
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--remote-debugging-port=9222")
+    # useful for GitHub Actions / Linux
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
 
-    # Required window size
-    chrome_options.add_argument("--window-size=1920,1080")
+    options.add_argument(f"--user-agent={USER_AGENT}")
 
-    # Reduce detection
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.add_argument("--disable-notifications")
-    chrome_options.add_argument("--disable-popups")
+    proxy = os.getenv("HTTP_PROXY")
+    if proxy:
+        options.add_argument(f"--proxy-server={proxy}")
+        log_msg(f"Using proxy: {proxy}")
+    else:
+        log_msg("Using default proxy")
 
-    # Fake user-agent (important for Naukri)
-    chrome_options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0"
+    driver = webdriver.Chrome(
+        service=ChromeService(),
+        options=options
     )
 
-    print("Launching Chrome...")
+    driver.implicitly_wait(5)
+    driver.get(NAUKRI_LOGIN_URL)
 
-    service = Service()
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-
-    print("Chrome launched successfully")
     return driver
 
 
 # ==============================
-# FUNCTION: Upload Resume
+# LOGIN HELPERS
 # ==============================
-def upload_to_naukri(resume_path):
-    driver = get_driver()
-    wait = WebDriverWait(driver, 20)
+def find_login_button(driver):
+    buttons = driver.find_elements(By.XPATH, LOGIN_BUTTON_XPATH)
+
+    for btn in buttons:
+        try:
+            text = btn.text.strip().lower()
+
+            if (
+                btn.is_displayed()
+                and btn.is_enabled()
+                and text == "login"
+            ):
+                return btn
+
+        except Exception:
+            pass
+
+    return None
+
+
+def login_success(driver):
+    time.sleep(5)
+
+    url = driver.current_url.lower()
+    log_msg(f"Current URL after login: {url}")
+
+    if "/mnjuser/homepage" in url:
+        return True
+
+    if "/mnjuser/profile" in url:
+        return True
+
+    return False
+
+
+# ==============================
+# LOGIN
+# ==============================
+def naukriLogin():
+    driver = LoadNaukri()
 
     try:
-        print("Opening Naukri login...")
+        log_msg("Login started")
 
-        driver.get("https://www.naukri.com/nlogin/login")
+        time.sleep(4)
+        take_screenshot(driver, "login_page")
 
-        # Wait for login page
-        wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
+        email = driver.find_element(By.ID, "usernameField")
+        password = driver.find_element(By.ID, "passwordField")
 
-        # Enter email
-        driver.find_element(By.ID, "usernameField").send_keys(EMAIL)
+        email.clear()
+        email.send_keys(EMAIL)
 
-        # Enter password
-        password_field = driver.find_element(By.ID, "passwordField")
-        password_field.send_keys(PASSWORD)
-        password_field.send_keys(Keys.RETURN)
+        password.clear()
+        password.send_keys(PASSWORD)
 
-        print("Logging in...")
-        time.sleep(5)
+        take_screenshot(driver, "credentials_filled")
 
-        # Open profile page
-        driver.get("https://www.naukri.com/mnjuser/profile")
+        time.sleep(2)
 
-        # Wait for upload input
-        upload_input = wait.until(
-            EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
-        )
+        login_btn = find_login_button(driver)
 
-        # Upload resume
-        upload_input.send_keys(resume_path)
+        if login_btn:
+            log_msg("Login button found")
 
-        print("✅ Resume uploaded successfully!")
+            try:
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});",
+                    login_btn
+                )
+                time.sleep(1)
 
-        time.sleep(5)
+                driver.execute_script(
+                    "arguments[0].click();",
+                    login_btn
+                )
+
+                log_msg("Clicked Login button")
+
+            except Exception as e:
+                log_msg(f"Login button click failed: {e}")
+                log_msg("Trying Enter key")
+                password.send_keys(Keys.ENTER)
+
+        else:
+            log_msg("Login button not found, using Enter key")
+            password.send_keys(Keys.ENTER)
+
+        take_screenshot(driver, "after_login_action")
+
+        time.sleep(8)
+
+        if login_success(driver):
+            log_msg("Login successful")
+            return True, driver
+
+        log_msg("Login failed")
+        return False, driver
+
+    except TimeoutException as e:
+        log_msg(f"Login timeout: {e}")
+        take_screenshot(driver, "login_timeout")
+        return False, driver
 
     except Exception as e:
-        print("❌ Error:", e)
+        log_msg(f"Login error: {e}")
+        take_screenshot(driver, "login_error")
+        return False, driver
 
-    finally:
+
+# ==============================
+# UPLOAD RESUME
+# ==============================
+def UploadResume(driver, resume_path):
+    driver.get(NAUKRI_PROFILE_URL)
+
+    time.sleep(5)
+    take_screenshot(driver, "profile_page")
+
+    upload_input = WebDriverWait(driver, 30).until(
+        lambda d: d.find_element(By.XPATH, "//input[@type='file']")
+    )
+
+    upload_input.send_keys(resume_path)
+
+    time.sleep(5)
+    take_screenshot(driver, "resume_uploaded")
+
+    log_msg("Resume uploaded successfully")
+
+
+# ==============================
+# TEARDOWN
+# ==============================
+def tearDown(driver):
+    if driver is None:
+        return
+
+    try:
         driver.quit()
-        print("Browser closed")
+    except Exception:
+        pass
 
 
 # ==============================
 # MAIN
 # ==============================
+def main():
+    log_msg("===== Naukri Automation Started =====")
+
+    if not EMAIL or not PASSWORD:
+        log_msg("Missing NAUKRI_EMAIL or NAUKRI_PASSWORD")
+        raise SystemExit(1)
+
+    if not os.path.exists(SOURCE_RESUME):
+        log_msg(f"Resume file not found: {SOURCE_RESUME}")
+        raise SystemExit(1)
+
+    driver = None
+
+    try:
+        resume_path = generate_resume()
+
+        status, driver = naukriLogin()
+
+        if status:
+            UploadResume(driver, resume_path)
+        else:
+            log_msg("Login failed")
+
+    except Exception as e:
+        catch(e)
+
+    finally:
+        tearDown(driver)
+
+    log_msg("===== Process Completed =====")
+
+
 if __name__ == "__main__":
-    print("===== Naukri Automation Started =====")
-
-    resume_path = generate_resume()
-    upload_to_naukri(resume_path)
-
-    print("===== Process Completed =====")
+    main()
