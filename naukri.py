@@ -12,13 +12,12 @@ from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 
 # =========================================================
-# BASE PATHS
+# PATHS
 # =========================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -34,7 +33,7 @@ os.makedirs(DUMP_DIR, exist_ok=True)
 
 
 # =========================================================
-# USER CONFIG
+# CONFIG
 # =========================================================
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
@@ -43,12 +42,6 @@ RESUME_PREFIX = "Purushottam_Kumar_Resume"
 
 NAUKRI_LOGIN_URL = "https://www.naukri.com/nlogin/login"
 NAUKRI_PROFILE_URL = "https://www.naukri.com/mnjuser/profile"
-
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0"
-)
 
 LOGIN_XPATH = (
     '//button[@class="waves-effect waves-light btn-large btn-block btn-bold blue-btn textTransform"]'
@@ -76,7 +69,7 @@ def log_msg(message):
 def catch(error):
     _, _, exc_tb = sys.exc_info()
     line_no = str(exc_tb.tb_lineno)
-    msg = f"{type(error)} : {error} at Line {line_no}"
+    msg = f"{type(error)} : {error} at line {line_no}"
     print(msg)
     logging.error(msg)
 
@@ -120,6 +113,7 @@ def generate_resume():
     shutil.copy2(SOURCE_RESUME, destination_path)
 
     log_msg(f"Resume ready: {destination_path}")
+
     return os.path.abspath(destination_path)
 
 
@@ -137,21 +131,6 @@ def LoadNaukri():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
-    options.add_argument(f"--user-agent={USER_AGENT}")
-
-    proxy = (
-        os.getenv("HTTPS_PROXY")
-        or os.getenv("HTTP_PROXY")
-        or os.getenv("https_proxy")
-        or os.getenv("http_proxy")
-    )
-
-    if proxy:
-        options.add_argument(f"--proxy-server={proxy}")
-        log_msg(f"Using proxy: {proxy}")
-    else:
-        log_msg("Using default proxy")
-
     driver = webdriver.Chrome(
         service=ChromeService(),
         options=options
@@ -165,7 +144,7 @@ def LoadNaukri():
         EC.presence_of_element_located((By.ID, "usernameField"))
     )
 
-    take_screenshot(driver, "01_page_loaded")
+    take_screenshot(driver, "01_login_page")
 
     return driver
 
@@ -191,14 +170,15 @@ def remove_otp_button(driver):
         take_screenshot(driver, "02_otp_removed")
 
     except Exception as e:
-        log_msg(f"OTP removal skipped: {e}")
+        log_msg(f"OTP remove skipped: {e}")
 
 
 # =========================================================
-# LOGIN SUCCESS CHECK
+# LOGIN SUCCESS
 # =========================================================
 def login_success(driver):
     url = driver.current_url.lower()
+
     log_msg(f"Current URL: {url}")
 
     if "/mnjuser/" in url:
@@ -217,32 +197,35 @@ def naukriLogin():
         log_msg("Login started")
 
         email = WebDriverWait(driver, 20).until(
-            EC.visibility_of_element_located((By.ID, "usernameField"))
+            EC.element_to_be_clickable((By.ID, "usernameField"))
         )
 
         password = WebDriverWait(driver, 20).until(
-            EC.visibility_of_element_located((By.ID, "passwordField"))
+            EC.element_to_be_clickable((By.ID, "passwordField"))
         )
 
+        email.click()
         email.clear()
         email.send_keys(EMAIL)
-        take_screenshot(driver, "03_email_filled")
 
+        time.sleep(1)
+
+        password.click()
         password.clear()
         password.send_keys(PASSWORD)
-        take_screenshot(driver, "04_password_filled")
 
-        time.sleep(2)
+        take_screenshot(driver, "03_credentials_filled")
 
-        # REMOVE OTP BUTTON
+        log_msg(f"Email length: {len(email.get_attribute('value'))}")
+        log_msg(f"Password length: {len(password.get_attribute('value'))}")
+
         remove_otp_button(driver)
 
-        # WAIT 10 SEC BEFORE CLICK
         log_msg("Waiting 10 seconds before click")
         time.sleep(10)
 
-        login_btn = WebDriverWait(driver, 100).until(
-            EC.element_to_be_clickable((By.XPATH, LOGIN_XPATH))
+        login_btn = WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.XPATH, LOGIN_XPATH))
         )
 
         driver.execute_script(
@@ -255,22 +238,19 @@ def naukriLogin():
         driver.execute_script("arguments[0].click();", login_btn)
 
         log_msg("Login button clicked")
-        take_screenshot(driver, "05_login_clicked")
+        take_screenshot(driver, "04_login_clicked")
 
-        # WAIT 10 SEC AFTER CLICK
         log_msg("Waiting 10 seconds after click")
         time.sleep(10)
 
-        take_screenshot(driver, "06_after_click")
+        take_screenshot(driver, "05_after_login")
 
         if login_success(driver):
             log_msg("Login successful")
             return True, driver
 
-        if NAUKRI_LOGIN_URL in driver.current_url:
-            log_msg("Still on login page")
-            take_screenshot(driver, "07_login_failed")
-            dump_html(driver, "login_failed")
+        log_msg("Login failed")
+        dump_html(driver, "login_failed")
 
         return False, driver
 
@@ -294,7 +274,7 @@ def UploadResume(driver, resume_path):
     driver.get(NAUKRI_PROFILE_URL)
 
     time.sleep(5)
-    take_screenshot(driver, "08_profile_page")
+    take_screenshot(driver, "06_profile_page")
 
     upload_input = WebDriverWait(driver, 30).until(
         EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
@@ -303,7 +283,8 @@ def UploadResume(driver, resume_path):
     upload_input.send_keys(resume_path)
 
     time.sleep(5)
-    take_screenshot(driver, "09_resume_uploaded")
+
+    take_screenshot(driver, "07_resume_uploaded")
 
     log_msg("Resume uploaded successfully")
 
