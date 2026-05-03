@@ -43,21 +43,6 @@ NAUKRI_PROFILE_URL = "https://www.naukri.com/mnjuser/profile"
 
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
 
-LOGIN_BUTTON_XPATH = (
-    '//button[@class="waves-effect waves-light btn-large btn-block btn-bold blue-btn textTransform"]'
-)
-
-OTP_BUTTON_XPATH = (
-    '//button[@class="waves-effect waves-light btn-large btn-block btn-bold otpButton textTransform"]'
-)
-
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/147.0.0.0 Safari/537.36"
-)
-
-
 logging.basicConfig(
     level=logging.INFO,
     filename=LOG_FILE,
@@ -94,7 +79,7 @@ def take_screenshot(driver, name):
 
 
 # ==============================
-# HTML DUMP
+# HTML
 # ==============================
 def dump_html(driver, name):
     try:
@@ -133,12 +118,11 @@ def LoadNaukri():
     options.add_argument("--headless=new")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-gpu")
-    options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-notifications")
     options.add_argument("--disable-popup-blocking")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument(f"--user-agent={USER_AGENT}")
 
     options.add_experimental_option(
         "excludeSwitches",
@@ -173,17 +157,15 @@ def LoadNaukri():
 # ==============================
 def remove_otp_button(driver):
     try:
-        otp_buttons = driver.find_elements(By.XPATH, OTP_BUTTON_XPATH)
-
-        for btn in otp_buttons:
-            driver.execute_script(
-                "arguments[0].remove();",
-                btn
-            )
-
+        driver.execute_script("""
+            let otp = document.querySelector(
+                'button.otpButton'
+            );
+            if (otp) {
+                otp.remove();
+            }
+        """)
         log_msg("OTP button removed")
-        take_screenshot(driver, "02_otp_removed")
-
     except Exception as e:
         log_msg(f"OTP remove skipped: {e}")
 
@@ -195,7 +177,7 @@ def naukriLogin():
     driver = LoadNaukri()
 
     try:
-        wait = WebDriverWait(driver, 25)
+        wait = WebDriverWait(driver, 30)
 
         email = wait.until(
             EC.presence_of_element_located((By.ID, "usernameField"))
@@ -211,39 +193,30 @@ def naukriLogin():
         password.clear()
         password.send_keys(PASSWORD)
 
-        take_screenshot(driver, "03_credentials_filled")
+        take_screenshot(driver, "02_credentials_filled")
 
         time.sleep(2)
 
         remove_otp_button(driver)
 
-        login_btn = wait.until(
-            EC.presence_of_element_located((By.XPATH, LOGIN_BUTTON_XPATH))
-        )
+        # submit form directly (more stable on GitHub)
+        driver.execute_script("""
+            let form = document.querySelector("#loginForm");
+            if (form) {
+                form.submit();
+            }
+        """)
 
-        driver.execute_script(
-            "arguments[0].scrollIntoView({block:'center'});",
-            login_btn
-        )
+        log_msg("Form submitted via JS")
 
-        time.sleep(2)
-
-        driver.execute_script(
-            "arguments[0].click();",
-            login_btn
-        )
-
-        log_msg("Login button clicked")
-
-        take_screenshot(driver, "04_login_clicked")
+        take_screenshot(driver, "03_form_submitted")
 
         # 10 sec gap
         time.sleep(10)
 
-        take_screenshot(driver, "05_after_10sec")
+        take_screenshot(driver, "04_after_10sec")
 
         current_url = driver.current_url.lower()
-
         log_msg(f"Current URL: {current_url}")
 
         if (
@@ -279,7 +252,7 @@ def UploadResume(driver, resume_path):
 
     time.sleep(5)
 
-    take_screenshot(driver, "06_profile")
+    take_screenshot(driver, "05_profile_page")
 
     upload_input = WebDriverWait(driver, 30).until(
         EC.presence_of_element_located(
@@ -291,13 +264,13 @@ def UploadResume(driver, resume_path):
 
     time.sleep(5)
 
-    take_screenshot(driver, "07_uploaded")
+    take_screenshot(driver, "06_resume_uploaded")
 
     log_msg("Resume uploaded successfully")
 
 
 # ==============================
-# CLOSE
+# TEARDOWN
 # ==============================
 def tearDown(driver):
     if driver:
