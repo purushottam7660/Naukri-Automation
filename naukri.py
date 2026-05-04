@@ -50,11 +50,11 @@ def get_driver():
     options = Options()
 
     # Reduce "access denied"
-    # options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--user-data-dir=/tmp/chrome-profile")
 
     options.add_argument("--start-maximized")
-    # options.add_argument("--no-sandbox")
+    options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
     # User-Agent spoof
