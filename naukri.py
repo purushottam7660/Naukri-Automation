@@ -18,7 +18,7 @@ from selenium.webdriver.support import expected_conditions as EC
 EMAIL = os.getenv("NAUKRI_EMAIL") 
 PASSWORD = os.getenv("NAUKRI_PASSWORD") 
 
-FIREFOX_PROFILE_PATH = r"C:\Users\Lenovo\AppData\Roaming\Mozilla\Firefox\Profiles\cckbmrt3.default-release"
+# FIREFOX_PROFILE_PATH = r"C:\Users\Lenovo\AppData\Roaming\Mozilla\Firefox\Profiles\cckbmrt3.default-release"
 
 SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
 DEST_FOLDER = "Naukri_resume"
@@ -77,7 +77,7 @@ def get_driver():
 
     # 🔥 USE EXISTING FIREFOX PROFILE
     options.add_argument("-profile")
-    options.add_argument(FIREFOX_PROFILE_PATH)
+    # options.add_argument(FIREFOX_PROFILE_PATH)
 
     # Basic stealth
     options.set_preference("dom.webdriver.enabled", False)
