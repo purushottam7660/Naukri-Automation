@@ -79,10 +79,10 @@ def get_driver():
 # LOGIN FUNCTION
 # =========================
 def login(driver):
-    wait = WebDriverWait(driver, 20)
+    wait = WebDriverWait(driver, 100)
 
     driver.get(BASE_URL)
-    time.sleep(3)
+    time.sleep(30)
     save_screenshot(driver, "login_page")
 
     # Enter email
@@ -140,6 +140,8 @@ def main():
         time.sleep(5)
 
         logging.info("Automation completed successfully")
+        save_screenshot(driver, "Automation completed successfully")
+
 
     except Exception as e:
         logging.error(f"Error occurred: {e}")
@@ -147,6 +149,7 @@ def main():
 
     finally:
         driver.quit()
+        save_screenshot(driver, "Driver closed")
         logging.info("Driver closed")
 
 
