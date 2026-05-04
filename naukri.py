@@ -17,6 +17,7 @@ EMAIL = os.getenv("NAUKRI_EMAIL", "your_email_here")
 PASSWORD = os.getenv("NAUKRI_PASSWORD", "your_password_here")
 
 BASE_URL = "https://www.naukri.com/nlogin/login"
+SUCCESS_URL = "https://www.naukri.com/mnjuser/"
 
 SCREENSHOT_DIR = "screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
@@ -32,45 +33,36 @@ logging.basicConfig(
 
 
 # =========================
-# SAFE SCREENSHOT
+# SAFE SCREENSHOT (IMPORTANT FIX)
 # =========================
-def save_screenshot(driver, name):
+def save_screenshot(driver, step):
     try:
         if driver is None:
             return
 
-        path = os.path.join(
-            SCREENSHOT_DIR,
-            f"{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-        )
+        filename = f"{step}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        path = os.path.join(SCREENSHOT_DIR, filename)
 
         driver.save_screenshot(path)
         logging.info(f"[SCREENSHOT] {path}")
 
     except Exception as e:
-        logging.warning(f"Screenshot skipped: {e}")
+        logging.warning(f"Screenshot failed at {step}: {e}")
 
 
 # =========================
-# DRIVER SETUP (STEALTH)
+# DRIVER
 # =========================
 def get_driver():
     options = Options()
 
-    # 🔥 CRITICAL FIX FOR DETECTION
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
+    options.add_argument("--remote-debugging-port=9222")
 
-    # 🔥 anti automation flags
-    options.add_argument("--disable-blink-features=AutomationControlled")
-
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
-
-    # User agent
     options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -78,9 +70,7 @@ def get_driver():
     )
 
     driver = webdriver.Chrome(options=options)
-
-    # hide webdriver flag
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    driver.set_page_load_timeout(60)
 
     return driver
 
@@ -89,54 +79,89 @@ def get_driver():
 # HUMAN TYPING
 # =========================
 def human_type(element, text):
-    for char in text:
-        element.send_keys(char)
-        time.sleep(0.1)
+    for c in text:
+        element.send_keys(c)
+        time.sleep(0.05)
 
 
 # =========================
-# LOGIN FUNCTION
+# LOGIN WITH FULL SCREENSHOT TRACE
 # =========================
-def login(driver):
-    wait = WebDriverWait(driver, 30)
+def login_until_success(driver, max_attempts=3):
+    wait = WebDriverWait(driver, 25)
 
-    driver.get(BASE_URL)
-    time.sleep(5)
-    save_screenshot(driver, "login_page")
+    login_buttons = [
+        "//button[normalize-space()='Login']",
+        "//button[contains(.,'Login')]",
+        "//a[contains(.,'Login')]"
+    ]
 
-    # EMAIL
-    email_box = wait.until(
-        EC.presence_of_element_located((By.ID, "usernameField"))
-    )
-    email_box.clear()
-    human_type(email_box, EMAIL)
-    time.sleep(2)
+    for attempt in range(1, max_attempts + 1):
 
-    # PASSWORD
-    password_box = driver.find_element(By.ID, "passwordField")
-    password_box.clear()
-    human_type(password_box, PASSWORD)
-    time.sleep(2)
+        logging.info(f"===== ATTEMPT {attempt} =====")
 
-    save_screenshot(driver, "filled_credentials")
+        try:
+            # STEP 1 - OPEN PAGE
+            driver.get(BASE_URL)
+            time.sleep(4)
+            save_screenshot(driver, f"attempt_{attempt}_01_open_page")
 
-    # LOGIN CLICK
-    try:
-        login_btn = wait.until(
-            EC.element_to_be_clickable((By.XPATH, "//button[contains(.,'Login')]"))
-        )
-        login_btn.click()
+            # STEP 2 - EMAIL
+            email_box = wait.until(
+                EC.presence_of_element_located((By.ID, "usernameField"))
+            )
+            email_box.clear()
+            human_type(email_box, EMAIL)
+            save_screenshot(driver, f"attempt_{attempt}_02_email_filled")
 
-    except Exception:
-        login_btn = wait.until(
-            EC.element_to_be_clickable((By.XPATH, "//button[normalize-space()='Login']"))
-        )
-        login_btn.click()
+            # STEP 3 - PASSWORD
+            password_box = driver.find_element(By.ID, "passwordField")
+            password_box.clear()
+            human_type(password_box, PASSWORD)
+            save_screenshot(driver, f"attempt_{attempt}_03_password_filled")
 
-    time.sleep(8)
-    save_screenshot(driver, "after_login")
+            # STEP 4 - CLICK LOGIN
+            clicked = False
 
-    logging.info("Login attempt completed")
+            for xp in login_buttons:
+                try:
+                    btn = wait.until(
+                        EC.element_to_be_clickable((By.XPATH, xp))
+                    )
+                    btn.click()
+                    clicked = True
+                    logging.info(f"Clicked login using {xp}")
+                    break
+                except:
+                    continue
+
+            if not clicked:
+                raise Exception("Login button not found")
+
+            save_screenshot(driver, f"attempt_{attempt}_04_login_clicked")
+
+            # STEP 5 - WAIT REDIRECT
+            time.sleep(8)
+            save_screenshot(driver, f"attempt_{attempt}_05_after_wait")
+
+            current_url = driver.current_url
+            logging.info(f"Current URL: {current_url}")
+
+            # STEP 6 - SUCCESS CHECK
+            if SUCCESS_URL in current_url:
+                save_screenshot(driver, f"attempt_{attempt}_SUCCESS")
+                logging.info("LOGIN SUCCESS 🎉")
+                return True
+
+            logging.warning("Login failed → retrying...")
+
+        except Exception as e:
+            logging.error(f"Attempt {attempt} failed: {e}")
+            save_screenshot(driver, f"attempt_{attempt}_ERROR")
+            time.sleep(3)
+
+    logging.error("LOGIN FAILED after all attempts")
+    return False
 
 
 # =========================
@@ -148,20 +173,20 @@ def main():
     driver = get_driver()
 
     try:
-        login(driver)
+        success = login_until_success(driver, max_attempts=5)
 
-        time.sleep(5)
-        logging.info("Automation completed successfully")
-
-        save_screenshot(driver, "success")
+        if success:
+            logging.info("Automation continues after login")
+        else:
+            logging.error("Stopping due to login failure")
 
     except Exception as e:
-        logging.error(f"Error occurred: {e}")
-        save_screenshot(driver, "error")
+        logging.error(f"Fatal error: {e}")
+        save_screenshot(driver, "fatal_error")
 
     finally:
         try:
-            save_screenshot(driver, "before_close")
+            save_screenshot(driver, "final_exit")
         except:
             pass
 
