@@ -1,4 +1,4 @@
-name: Naukri Automation
+name: Naukri Automation (Firefox)
 
 on:
   schedule:
@@ -34,7 +34,7 @@ jobs:
           pip install -r requirements.txt
 
       # =====================================================
-      # Ensure folders exist (prevents upload errors)
+      # Ensure folders exist
       # =====================================================
       - name: Create required folders
         shell: powershell
@@ -44,16 +44,19 @@ jobs:
           New-Item -ItemType Directory -Force Naukri_resume
 
       # =====================================================
-      # Show environment (debug)
+      # Debug: Firefox + GeckoDriver
       # =====================================================
-      - name: Print Chrome version
+      - name: Check Firefox & GeckoDriver
         shell: powershell
         run: |
-          Write-Host "Checking Chrome..."
-          Get-Command chrome -ErrorAction SilentlyContinue
+          Write-Host "Checking Firefox version..."
+          firefox --version
+
+          Write-Host "Checking GeckoDriver..."
+          geckodriver --version
 
       # =====================================================
-      # Run automation
+      # Run automation script
       # =====================================================
       - name: Run Automation Script
         env:
@@ -62,7 +65,7 @@ jobs:
         run: python naukri.py
 
       # =====================================================
-      # Upload logs + screenshots ALWAYS
+      # Upload logs + debug files (ALWAYS)
       # =====================================================
       - name: Upload Debug Files
         if: always()
