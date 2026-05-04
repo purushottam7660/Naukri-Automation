@@ -23,11 +23,17 @@ SCREENSHOT_DIR = "screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 
-logging.basicConfig(level=logging.INFO)
+# =========================
+# LOGGING
+# =========================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
 # =========================
-# SCREENSHOT SAFE
+# SAFE SCREENSHOT
 # =========================
 def ss(driver, name):
     try:
@@ -45,67 +51,92 @@ def ss(driver, name):
 # DRIVER
 # =========================
 def get_driver():
-    opt = Options()
-    opt.add_argument("--headless=new")
-    opt.add_argument("--no-sandbox")
-    opt.add_argument("--disable-dev-shm-usage")
-    opt.add_argument("--window-size=1920,1080")
-    return webdriver.Chrome(options=opt)
+    options = Options()
+
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1920,1080")
+
+    driver = webdriver.Chrome(options=options)
+    driver.set_page_load_timeout(60)
+
+    return driver
 
 
 # =========================
-# CORE LOGIN FLOW
+# SAFE PAGE LOAD
 # =========================
-def attempt_login(driver, wait, mode):
-    """
-    mode:
-    1-3 => Login button
-    4-5 => OTP button
-    """
-
+def open_login_page(driver):
     driver.get(BASE_URL)
-    logging.info("Page loaded")
-    ss(driver, f"attempt_{mode}_01_load")
+    time.sleep(30)
+    ss(driver, "01_page_loaded")
+
+    # validate correct page
+    if "nlogin" not in driver.current_url:
+        raise Exception(f"Wrong page loaded: {driver.current_url}")
+
+
+# =========================
+# WAIT FOR FORM
+# =========================
+def wait_for_form(driver, wait):
+    try:
+        wait.until(EC.presence_of_element_located((By.ID, "loginForm")))
+        wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
+        return True
+    except:
+        ss(driver, "form_not_found")
+        return False
+
+
+# =========================
+# LOGIN ATTEMPT
+# =========================
+def login_attempt(driver, wait, attempt):
+    logging.info(f"===== ATTEMPT {attempt} =====")
+
+    # STEP 1 - OPEN PAGE
+    open_login_page(driver)
+
+    ok = wait_for_form(driver, wait)
+    if not ok:
+        raise Exception("Login form not loaded (possible captcha/block)")
+
     time.sleep(30)
 
-    # EMAIL
-    email = wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
+    # STEP 2 - EMAIL
+    email = wait.until(
+        EC.presence_of_element_located((By.ID, "usernameField"))
+    )
     email.clear()
     email.send_keys(EMAIL)
 
-    ss(driver, f"attempt_{mode}_02_email")
+    ss(driver, f"attempt_{attempt}_email")
     time.sleep(30)
 
-    # PASSWORD
+    # STEP 3 - PASSWORD
     pwd = driver.find_element(By.ID, "passwordField")
     pwd.clear()
     pwd.send_keys(PASSWORD)
 
-    ss(driver, f"attempt_{mode}_03_password")
+    ss(driver, f"attempt_{attempt}_password")
     time.sleep(30)
 
-    # CLICK BUTTON BASED ON MODE
-    if mode <= 3:
-        btn = wait.until(
-            EC.element_to_be_clickable((By.XPATH, "//button[@type='submit' and contains(text(),'Login')]"))
-        )
-        logging.info("Clicking LOGIN button")
-    else:
-        btn = wait.until(
-            EC.element_to_be_clickable((By.XPATH, "//button[contains(@class,'otpButton')]"))
-        )
-        logging.info("Clicking OTP button")
-
+    # STEP 4 - CLICK LOGIN
+    btn = wait.until(
+        EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Login')]"))
+    )
     btn.click()
 
-    ss(driver, f"attempt_{mode}_04_clicked")
+    ss(driver, f"attempt_{attempt}_clicked")
     time.sleep(30)
 
     return driver.current_url
 
 
 # =========================
-# MAIN LOOP (5 TRIES)
+# MAIN LOOP (5 RETRIES)
 # =========================
 def run():
     driver = get_driver()
@@ -114,18 +145,20 @@ def run():
     try:
         for i in range(1, 6):
 
-            logging.info(f"===== ATTEMPT {i} =====")
+            try:
+                url = login_attempt(driver, wait, i)
 
-            url = attempt_login(driver, wait, i)
+                logging.info(f"URL: {url}")
+                ss(driver, f"attempt_{i}_final")
 
-            logging.info(f"URL after login: {url}")
-            ss(driver, f"attempt_{i}_05_final")
+                if SUCCESS_URL in url:
+                    logging.info("LOGIN SUCCESS 🎉")
+                    ss(driver, "SUCCESS")
+                    return
 
-            # SUCCESS CHECK
-            if SUCCESS_URL in url:
-                logging.info("LOGIN SUCCESS 🎉")
-                ss(driver, "SUCCESS")
-                return
+            except Exception as e:
+                logging.error(f"Attempt {i} failed: {e}")
+                ss(driver, f"attempt_{i}_error")
 
             time.sleep(30)
 
@@ -136,8 +169,12 @@ def run():
             driver.quit()
         except:
             pass
+
         logging.info("Driver closed")
 
 
+# =========================
+# START
+# =========================
 if __name__ == "__main__":
     run()
