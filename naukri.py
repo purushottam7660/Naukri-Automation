@@ -2,7 +2,6 @@ import os
 import shutil
 import time
 from datetime import datetime
-import os
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -12,13 +11,10 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+
 # ==============================
 # USER CONFIGURATION
 # ==============================
-
-# EMAIL = os.getenv("NAUKRI_EMAIL")
-# PASSWORD = os.getenv("NAUKRI_PASSWORD")
-
 EMAIL = "purushottam7660@gmail.com"
 PASSWORD = "3911Pp@#"
 
@@ -26,8 +22,9 @@ SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
 DEST_FOLDER = "Naukri_resume"
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
 
+
 # ==============================
-# FUNCTION: Generate Resume
+# GENERATE RESUME
 # ==============================
 def generate_resume():
     os.makedirs(DEST_FOLDER, exist_ok=True)
@@ -45,31 +42,21 @@ def generate_resume():
 
     return destination_path
 
+
 # ==============================
-# FUNCTION: Setup Chrome Driver
+# SETUP DRIVER
 # ==============================
 def get_driver():
     chrome_options = Options()
 
-    # ✅ STABLE headless mode (fix crash)
-    chrome_options.add_argument("--headless=old")
+    # ❗ Disable headless for reliability (enable later if needed)
+    # chrome_options.add_argument("--headless=new")
 
-    # ✅ Stability (VERY IMPORTANT)
+    chrome_options.add_argument("--start-maximized")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-extensions")
-
-    # Prevent crash
-    chrome_options.add_argument("--remote-debugging-port=9222")
-
-    # Required window size
-    chrome_options.add_argument("--window-size=1920,1080")
-
-    # Reduce detection
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
-    # Fake user-agent (important for Naukri)
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -77,63 +64,83 @@ def get_driver():
     )
 
     print("Launching Chrome...")
+    driver = webdriver.Chrome(service=Service(), options=chrome_options)
+    print("Chrome launched")
 
-    service = Service()
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-
-    print("Chrome launched successfully")
     return driver
 
+
 # ==============================
-# FUNCTION: Upload Resume
+# LOGIN FUNCTION
+# ==============================
+def login(driver, wait):
+    print("Opening login page...")
+    driver.get("https://www.naukri.com/nlogin/login")
+
+    # Email field
+    email_field = wait.until(
+        EC.element_to_be_clickable((By.ID, "usernameField"))
+    )
+    driver.execute_script("arguments[0].scrollIntoView(true);", email_field)
+    time.sleep(1)
+    email_field.clear()
+    email_field.send_keys(EMAIL)
+
+    # Password field
+    password_field = wait.until(
+        EC.element_to_be_clickable((By.ID, "passwordField"))
+    )
+    password_field.clear()
+    password_field.send_keys(PASSWORD)
+
+    # LOGIN BUTTON (important - avoid OTP)
+    login_btn = wait.until(
+        EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))
+    )
+    login_btn.click()
+
+    print("Logging in...")
+    time.sleep(5)
+
+
+# ==============================
+# UPLOAD RESUME
+# ==============================
+def upload_resume(driver, wait, resume_path):
+    print("Opening profile page...")
+    driver.get("https://www.naukri.com/mnjuser/profile")
+
+    upload_input = wait.until(
+        EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
+    )
+
+    upload_input.send_keys(os.path.abspath(resume_path))
+    print("Resume uploaded successfully")
+
+    time.sleep(5)
+
+
+# ==============================
+# MAIN FUNCTION
 # ==============================
 def upload_to_naukri(resume_path):
     driver = get_driver()
-    wait = WebDriverWait(driver, 20)
+    wait = WebDriverWait(driver, 25)
 
     try:
-        print("Opening Naukri login...")
-
-        driver.get("https://www.naukri.com/nlogin/login")
-
-        # Wait for login page
-        wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
-
-        # Enter email
-        driver.find_element(By.ID, "usernameField").send_keys(EMAIL)
-
-        # Enter password
-        password_field = driver.find_element(By.ID, "passwordField")
-        password_field.send_keys(PASSWORD)
-        password_field.send_keys(Keys.RETURN)
-
-        print("Logging in...")
-        time.sleep(5)
-
-        # Open profile page
-        driver.get("https://www.naukri.com/mnjuser/profile")
-
-        # Wait for upload input
-        upload_input = wait.until(
-            EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
-        )
-
-        # Upload resume
-        upload_input.send_keys(resume_path)
-
-        print("✅ Resume uploaded successfully!")
-
-        time.sleep(5)
+        login(driver, wait)
+        upload_resume(driver, wait, resume_path)
 
     except Exception as e:
-        print("❌ Error:", e)
+        print("ERROR:", e)
 
     finally:
         driver.quit()
         print("Browser closed")
 
+
 # ==============================
-# MAIN
+# RUN
 # ==============================
 if __name__ == "__main__":
     print("===== Naukri Automation Started =====")
