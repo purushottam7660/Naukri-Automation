@@ -12,13 +12,14 @@ from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 
-# ==============================
+# ==========================================
 # PATHS
-# ==============================
+# ==========================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 SOURCE_RESUME = os.path.join(BASE_DIR, "Purushottam_Kumar_CV.pdf")
@@ -32,9 +33,9 @@ os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 os.makedirs(DUMP_DIR, exist_ok=True)
 
 
-# ==============================
+# ==========================================
 # CONFIG
-# ==============================
+# ==========================================
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
 
@@ -43,19 +44,33 @@ NAUKRI_PROFILE_URL = "https://www.naukri.com/mnjuser/profile"
 
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
 
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/147.0.0.0 Safari/537.36"
+)
+
+LOGIN_BUTTON_XPATH = (
+    "//button[@class='waves-effect waves-light btn-large btn-block btn-bold blue-btn textTransform']"
+)
+
+OTP_BUTTON_XPATH = (
+    "//button[@class='waves-effect waves-light btn-large btn-block btn-bold otpButton textTransform']"
+)
+
 logging.basicConfig(
-    level=logging.INFO,
     filename=LOG_FILE,
-    format="%(asctime)s : %(message)s",
+    level=logging.INFO,
+    format="%(asctime)s : %(message)s"
 )
 
 
-# ==============================
-# LOG
-# ==============================
-def log_msg(msg):
-    print(msg)
-    logging.info(msg)
+# ==========================================
+# LOGGING
+# ==========================================
+def log_msg(message):
+    print(message)
+    logging.info(message)
 
 
 def catch(error):
@@ -66,9 +81,9 @@ def catch(error):
     logging.error(msg)
 
 
-# ==============================
-# SCREENSHOT
-# ==============================
+# ==========================================
+# DEBUG
+# ==========================================
 def take_screenshot(driver, name):
     try:
         path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
@@ -78,25 +93,23 @@ def take_screenshot(driver, name):
         pass
 
 
-# ==============================
-# HTML
-# ==============================
 def dump_html(driver, name):
     try:
         path = os.path.join(DUMP_DIR, f"{name}.html")
         with open(path, "w", encoding="utf-8") as f:
             f.write(driver.page_source)
-        log_msg(f"[HTML] {path}")
-    except Exception:
-        pass
+        log_msg(f"[HTML DUMP] {path}")
+    except Exception as e:
+        log_msg(f"HTML dump failed: {e}")
 
 
-# ==============================
+# ==========================================
 # RESUME
-# ==============================
+# ==========================================
 def generate_resume():
     current_date = datetime.now().strftime("%d_%b_%Y")
     new_filename = f"{RESUME_PREFIX}_{current_date}.pdf"
+
     destination_path = os.path.join(DEST_FOLDER, new_filename)
 
     if os.path.exists(destination_path):
@@ -109,42 +122,53 @@ def generate_resume():
     return os.path.abspath(destination_path)
 
 
-# ==============================
-# DRIVER
-# ==============================
+# ==========================================
+# CHROME
+# ==========================================
 def LoadNaukri():
     options = webdriver.ChromeOptions()
 
-    options.add_argument("--headless=new")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-notifications")
     options.add_argument("--disable-popup-blocking")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--no-sandbox")
+
+    # github actions friendly
+    options.add_argument("--headless=new")
+
     options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
 
-    options.add_experimental_option(
-        "excludeSwitches",
-        ["enable-automation"]
-    )
-
-    options.add_experimental_option(
-        "useAutomationExtension",
-        False
-    )
+    options.add_argument(f"--user-agent={USER_AGENT}")
 
     driver = webdriver.Chrome(
         service=ChromeService(),
         options=options
     )
 
-    driver.execute_script(
-        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4]
+                });
+
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en']
+                });
+            """
+        },
     )
 
     driver.implicitly_wait(5)
-
     driver.get(NAUKRI_LOGIN_URL)
 
     take_screenshot(driver, "01_login_page")
@@ -152,32 +176,31 @@ def LoadNaukri():
     return driver
 
 
-# ==============================
-# REMOVE OTP
-# ==============================
-def remove_otp_button(driver):
-    try:
-        driver.execute_script("""
-            let otp = document.querySelector(
-                'button.otpButton'
-            );
-            if (otp) {
-                otp.remove();
-            }
-        """)
-        log_msg("OTP button removed")
-    except Exception as e:
-        log_msg(f"OTP remove skipped: {e}")
+# ==========================================
+# LOGIN SUCCESS
+# ==========================================
+def login_success(driver):
+    url = driver.current_url.lower()
+
+    if "/mnjuser/homepage" in url:
+        return True
+
+    if "/mnjuser/profile" in url:
+        return True
+
+    return False
 
 
-# ==============================
+# ==========================================
 # LOGIN
-# ==============================
+# ==========================================
 def naukriLogin():
     driver = LoadNaukri()
 
     try:
         wait = WebDriverWait(driver, 30)
+
+        log_msg("Waiting for login page...")
 
         email = wait.until(
             EC.presence_of_element_located((By.ID, "usernameField"))
@@ -197,37 +220,64 @@ def naukriLogin():
 
         time.sleep(2)
 
-        remove_otp_button(driver)
-
-        # submit form directly (more stable on GitHub)
+        # remove OTP button
         driver.execute_script("""
-            let form = document.querySelector("#loginForm");
-            if (form) {
-                form.submit();
+            const otp = document.evaluate(
+                arguments[0],
+                document,
+                null,
+                XPathResult.FIRST_ORDERED_NODE_TYPE,
+                null
+            ).singleNodeValue;
+
+            if (otp) {
+                otp.remove();
             }
-        """)
+        """, OTP_BUTTON_XPATH)
 
-        log_msg("Form submitted via JS")
+        log_msg("OTP button removed")
+        take_screenshot(driver, "03_otp_removed")
 
-        take_screenshot(driver, "03_form_submitted")
+        time.sleep(2)
 
-        # 10 sec gap
+        login_btn = wait.until(
+            EC.presence_of_element_located((By.XPATH, LOGIN_BUTTON_XPATH))
+        )
+
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block:'center'});",
+            login_btn
+        )
+
+        time.sleep(1)
+
+        # click login
+        driver.execute_script("arguments[0].click();", login_btn)
+
+        log_msg("Login button clicked")
+
+        take_screenshot(driver, "04_login_clicked")
+
+        # mandatory 10 sec gap
         time.sleep(10)
 
-        take_screenshot(driver, "04_after_10sec")
+        if NAUKRI_LOGIN_URL in driver.current_url:
+            log_msg("Still on login page, submitting form")
 
-        current_url = driver.current_url.lower()
-        log_msg(f"Current URL: {current_url}")
+            password.send_keys(Keys.ENTER)
 
-        if (
-            "/mnjuser/homepage" in current_url
-            or "/mnjuser/profile" in current_url
-        ):
+            take_screenshot(driver, "05_enter_pressed")
+
+            time.sleep(10)
+
+        take_screenshot(driver, "06_after_login")
+
+        if login_success(driver):
             log_msg("Login successful")
             return True, driver
 
         dump_html(driver, "login_failed")
-        log_msg("Login failed")
+        log_msg(f"Login failed. Current URL: {driver.current_url}")
 
         return False, driver
 
@@ -244,34 +294,32 @@ def naukriLogin():
         return False, driver
 
 
-# ==============================
-# UPLOAD
-# ==============================
+# ==========================================
+# RESUME UPLOAD
+# ==========================================
 def UploadResume(driver, resume_path):
     driver.get(NAUKRI_PROFILE_URL)
 
     time.sleep(5)
 
-    take_screenshot(driver, "05_profile_page")
+    take_screenshot(driver, "07_profile_page")
 
     upload_input = WebDriverWait(driver, 30).until(
-        EC.presence_of_element_located(
-            (By.XPATH, "//input[@type='file']")
-        )
+        EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
     )
 
     upload_input.send_keys(resume_path)
 
     time.sleep(5)
 
-    take_screenshot(driver, "06_resume_uploaded")
+    take_screenshot(driver, "08_resume_uploaded")
 
     log_msg("Resume uploaded successfully")
 
 
-# ==============================
+# ==========================================
 # TEARDOWN
-# ==============================
+# ==========================================
 def tearDown(driver):
     if driver:
         try:
@@ -280,9 +328,9 @@ def tearDown(driver):
             pass
 
 
-# ==============================
+# ==========================================
 # MAIN
-# ==============================
+# ==========================================
 def main():
     log_msg("===== START =====")
 
@@ -312,7 +360,7 @@ def main():
     finally:
         tearDown(driver)
 
-    log_msg("===== DONE =====")
+    log_msg("===== END =====")
 
 
 if __name__ == "__main__":
