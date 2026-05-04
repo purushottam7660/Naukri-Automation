@@ -14,7 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 
 # =========================================================
-# SAFE LOGGING SETUP (FIX YOUR ERROR)
+# SAFE LOGGING SETUP
 # =========================================================
 if os.path.exists("logging_config.ini"):
     logging.config.fileConfig("logging_config.ini")
@@ -28,28 +28,38 @@ logger = logging.getLogger()
 
 
 # =========================================================
-# ENV VARIABLES (GITHUB SECRETS STYLE)
+# ENV (GITHUB SECRETS)
 # =========================================================
 EMAIL = os.getenv("NAUKRI_EMAIL")
 PASSWORD = os.getenv("NAUKRI_PASSWORD")
 
 
-
 # =========================================================
-# PATH CONFIG
+# PATHS
 # =========================================================
 ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 SOURCE_RESUME = os.path.join(ROOT_DIR, "Purushottam_Kumar_CV.pdf")
 DEST_FOLDER = os.path.join(ROOT_DIR, "Naukri_resume")
+SCREENSHOT_DIR = os.path.join(ROOT_DIR, "screenshots")
+
+os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 
 # =========================================================
-# RESUME GENERATION (YOUR ORIGINAL FORMAT PRESERVED)
+# SCREENSHOT HELPER
+# =========================================================
+def take_screenshot(driver, name):
+    path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
+    driver.save_screenshot(path)
+    logger.info(f"[SCREENSHOT] {path}")
+
+
+# =========================================================
+# RESUME GENERATION
 # =========================================================
 def generate_resume():
     current_date = datetime.now().strftime("%d_%b_%Y")
-
     new_filename = f"Purushottam_Kumar_Resume_{current_date}.pdf"
 
     os.makedirs(DEST_FOLDER, exist_ok=True)
@@ -84,6 +94,8 @@ class NaukriBot:
         self.driver.maximize_window()
         self.driver.get(self.login_url)
 
+        take_screenshot(self.driver, "01_login_page")
+
         logger.info("Login page opened")
 
     # -----------------------------------------------------
@@ -97,8 +109,6 @@ class NaukriBot:
         options.add_argument("--disable-notifications")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-popup-blocking")
-
-        # headless for GitHub actions
         options.add_argument("--headless=new")
 
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -125,15 +135,20 @@ class NaukriBot:
             email = wait.until(
                 EC.presence_of_element_located((By.ID, "usernameField"))
             )
+            email.send_keys(self.username)
+            take_screenshot(self.driver, "02_email_filled")
 
             password = wait.until(
                 EC.presence_of_element_located((By.ID, "passwordField"))
             )
+            password.send_keys(self.password)
+            take_screenshot(self.driver, "03_password_filled")
 
-            email.send_keys(self.username)
-            password.send_keys(self.password + Keys.ENTER)
+            password.send_keys(Keys.ENTER)
 
             time.sleep(10)
+
+            take_screenshot(self.driver, "04_after_login")
 
             if "homepage" in self.driver.current_url or "profile" in self.driver.current_url:
                 logger.info("Login successful")
@@ -144,6 +159,7 @@ class NaukriBot:
 
         except Exception as e:
             logger.exception(f"Login error: {e}")
+            take_screenshot(self.driver, "login_error")
             return False
 
     # -----------------------------------------------------
@@ -155,6 +171,8 @@ class NaukriBot:
             self.driver.get(self.profile_url)
             time.sleep(5)
 
+            take_screenshot(self.driver, "05_profile_page")
+
             upload = WebDriverWait(self.driver, 30).until(
                 EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
             )
@@ -163,10 +181,13 @@ class NaukriBot:
 
             time.sleep(5)
 
+            take_screenshot(self.driver, "06_resume_uploaded")
+
             logger.info("Resume uploaded successfully")
 
         except Exception as e:
             logger.exception(f"Resume upload failed: {e}")
+            take_screenshot(self.driver, "upload_error")
 
     # -----------------------------------------------------
     # CLOSE
@@ -179,7 +200,7 @@ class NaukriBot:
 
 
 # =========================================================
-# MAIN EXECUTION
+# MAIN
 # =========================================================
 def main():
 
