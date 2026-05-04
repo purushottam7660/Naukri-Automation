@@ -6,8 +6,9 @@ from datetime import datetime
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.firefox.options import Options
-from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
@@ -15,16 +16,15 @@ from selenium.webdriver.support import expected_conditions as EC
 # ==============================
 # CONFIG
 # ==============================
-EMAIL = os.getenv("NAUKRI_EMAIL") 
-PASSWORD = os.getenv("NAUKRI_PASSWORD") 
-
-# FIREFOX_PROFILE_PATH = r"C:\Users\Lenovo\AppData\Roaming\Mozilla\Firefox\Profiles\cckbmrt3.default-release"
+EMAIL = os.getenv("NAUKRI_EMAIL")
+PASSWORD = os.getenv("NAUKRI_PASSWORD")
 
 SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
 DEST_FOLDER = "Naukri_resume"
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
 
 SCREENSHOT_DIR = "screenshots"
+HTML_DIR = "html_dump"
 
 
 # ==============================
@@ -33,6 +33,7 @@ SCREENSHOT_DIR = "screenshots"
 def ensure_dirs():
     os.makedirs(DEST_FOLDER, exist_ok=True)
     os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+    os.makedirs(HTML_DIR, exist_ok=True)
 
 
 def ss(driver, name):
@@ -41,14 +42,14 @@ def ss(driver, name):
     print(f"[SS] {path}")
 
 
+def html(driver, name):
+    path = os.path.join(HTML_DIR, f"{name}.html")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(driver.page_source)
+
+
 def human_delay(a=2, b=5):
     time.sleep(random.uniform(a, b))
-
-
-def slow_type(element, text):
-    for ch in text:
-        element.send_keys(ch)
-        time.sleep(random.uniform(0.1, 0.3))
 
 
 # ==============================
@@ -70,80 +71,60 @@ def generate_resume():
 
 
 # ==============================
-# DRIVER (WITH PROFILE)
+# DRIVER (GITHUB FIX)
 # ==============================
 def get_driver():
     options = Options()
 
-    # 🔥 USE EXISTING FIREFOX PROFILE
-    options.add_argument("-profile")
-    # options.add_argument(FIREFOX_PROFILE_PATH)
+    # 🔥 REQUIRED FOR GITHUB ACTIONS
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
 
-    # Basic stealth
-    options.set_preference("dom.webdriver.enabled", False)
-    options.set_preference("useAutomationExtension", False)
+    options.add_argument("--disable-blink-features=AutomationControlled")
 
-    print("[INFO] Launching Firefox with profile...")
-    driver = webdriver.Firefox(service=Service(), options=options)
-    driver.maximize_window()
+    print("[INFO] Launching Chrome (GitHub-safe headless)...")
 
-    # Remove webdriver flag
-    driver.execute_script(
-        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-    )
+    driver = webdriver.Chrome(service=Service(), options=options)
+
+    driver.set_page_load_timeout(120)
 
     return driver
 
 
 # ==============================
-# CHECK LOGIN
-# ==============================
-def is_logged_in(driver):
-    try:
-        driver.get("https://www.naukri.com/mnjuser/profile")
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
-        )
-        print("[INFO] Already logged in ✅")
-        return True
-    except:
-        print("[INFO] Not logged in ❌")
-        return False
-
-
-# ==============================
-# LOGIN (ONLY IF NEEDED)
+# LOGIN
 # ==============================
 def login(driver, wait):
-    print("[STEP] Logging in...")
+    print("[STEP] Opening login page")
 
     driver.get("https://www.naukri.com/nlogin/login")
-    human_delay(4, 6)
+    human_delay(3, 6)
 
-    # Email
     email = wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
     email.clear()
-    slow_type(email, EMAIL)
+    email.send_keys(EMAIL)
 
-    human_delay()
-
-    # Password
     pwd = wait.until(EC.presence_of_element_located((By.ID, "passwordField")))
     pwd.clear()
-    slow_type(pwd, PASSWORD)
+    pwd.send_keys(PASSWORD)
 
     human_delay()
 
-    # Click login
-    btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']")))
-    driver.execute_script("arguments[0].click();", btn)
+    btn = wait.until(
+        EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))
+    )
 
-    print("[INFO] Login submitted (handle OTP manually if asked)")
+    btn.click()
+
+    print("[INFO] Login submitted")
     human_delay(8, 12)
 
 
 # ==============================
-# UPLOAD RESUME
+# UPLOAD
 # ==============================
 def upload_resume(driver, wait, resume_path):
     print("[STEP] Opening profile page")
@@ -157,7 +138,7 @@ def upload_resume(driver, wait, resume_path):
 
     upload.send_keys(os.path.abspath(resume_path))
 
-    print("[STEP] Resume uploaded ✅")
+    print("[STEP] Resume uploaded")
     human_delay(5, 7)
 
 
@@ -166,26 +147,26 @@ def upload_resume(driver, wait, resume_path):
 # ==============================
 def run():
     driver = get_driver()
-    wait = WebDriverWait(driver, 30)
+    wait = WebDriverWait(driver, 40)
 
     try:
         resume = generate_resume()
 
-        # 🔥 KEY LOGIC: SKIP LOGIN IF SESSION EXISTS
-        if not is_logged_in(driver):
-            login(driver, wait)
+        driver.get("https://www.google.com")  # warm-up (prevents timeout crash)
 
+        login(driver, wait)
         upload_resume(driver, wait, resume)
 
-        print("🎉 SUCCESS")
+        print("✅ SUCCESS")
 
     except Exception as e:
         print("❌ ERROR:", e)
         ss(driver, "error")
+        html(driver, "error")
 
     finally:
         driver.quit()
-        print("[INFO] Browser closed")
+        print("[INFO] Closed")
 
 
 # ==============================
