@@ -6,21 +6,49 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 
 # ==============================
-# USER CONFIGURATION
+# USER CONFIG
 # ==============================
-EMAIL = "purushottam7660@gmail.com"
-PASSWORD = "3911Pp@#"
+EMAIL = os.getenv("NAUKRI_EMAIL")
+PASSWORD = os.getenv("NAUKRI_PASSWORD")
 
 SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
 DEST_FOLDER = "Naukri_resume"
 RESUME_PREFIX = "Purushottam_Kumar_Resume"
+
+SCREENSHOT_DIR = "screenshots"
+HTML_DIR = "html_dump"
+
+# OPTIONAL PROXY (leave None if not needed)
+PROXY = None
+# Example: PROXY = "http://username:password@ip:port"
+
+
+# ==============================
+# UTILITIES
+# ==============================
+def ensure_dirs():
+    os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+    os.makedirs(HTML_DIR, exist_ok=True)
+
+
+def take_screenshot(driver, name):
+    path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
+    driver.save_screenshot(path)
+    print(f"[SS] Saved: {path}")
+
+
+def dump_html(driver, name):
+    path = os.path.join(HTML_DIR, f"{name}.html")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(driver.page_source)
+    print(f"[HTML] Dumped: {path}")
 
 
 # ==============================
@@ -35,117 +63,139 @@ def generate_resume():
 
     if os.path.exists(destination_path):
         os.remove(destination_path)
-        print("Old resume replaced")
 
     shutil.copy2(SOURCE_RESUME, destination_path)
-    print(f"Resume ready: {destination_path}")
+    print(f"[INFO] Resume ready: {destination_path}")
 
     return destination_path
 
 
 # ==============================
-# SETUP DRIVER
+# FIREFOX DRIVER SETUP
 # ==============================
 def get_driver():
-    chrome_options = Options()
+    options = Options()
 
-    # ❗ Disable headless for reliability (enable later if needed)
-    # chrome_options.add_argument("--headless=new")
+    # Headless (recommended for GitHub Actions)
+    options.add_argument("--headless")
 
-    chrome_options.add_argument("--start-maximized")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    options.set_preference("dom.webdriver.enabled", False)
+    options.set_preference("useAutomationExtension", False)
 
-    chrome_options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
+    # USER AGENT
+    options.set_preference(
+        "general.useragent.override",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) "
+        "Gecko/20100101 Firefox/120.0"
     )
 
-    print("Launching Chrome...")
-    driver = webdriver.Chrome(service=Service(), options=chrome_options)
-    print("Chrome launched")
+    # PROXY (if provided)
+    if PROXY:
+        print(f"[INFO] Using proxy: {PROXY}")
+        ip_port = PROXY.split("@")[-1]
+        ip, port = ip_port.split(":")
+
+        options.set_preference("network.proxy.type", 1)
+        options.set_preference("network.proxy.http", ip)
+        options.set_preference("network.proxy.http_port", int(port))
+        options.set_preference("network.proxy.ssl", ip)
+        options.set_preference("network.proxy.ssl_port", int(port))
+
+    print("[INFO] Launching Firefox...")
+    driver = webdriver.Firefox(service=Service(), options=options)
+    driver.maximize_window()
 
     return driver
 
 
 # ==============================
-# LOGIN FUNCTION
+# LOGIN
 # ==============================
 def login(driver, wait):
-    print("Opening login page...")
+    print("[STEP] Opening login page")
     driver.get("https://www.naukri.com/nlogin/login")
 
-    # Email field
-    email_field = wait.until(
-        EC.element_to_be_clickable((By.ID, "usernameField"))
-    )
-    driver.execute_script("arguments[0].scrollIntoView(true);", email_field)
-    time.sleep(1)
-    email_field.clear()
-    email_field.send_keys(EMAIL)
+    time.sleep(3)
+    take_screenshot(driver, "01_login_page")
+    dump_html(driver, "01_login_page")
 
-    # Password field
-    password_field = wait.until(
-        EC.element_to_be_clickable((By.ID, "passwordField"))
-    )
-    password_field.clear()
-    password_field.send_keys(PASSWORD)
+    # Email
+    email = wait.until(EC.element_to_be_clickable((By.ID, "usernameField")))
+    email.clear()
+    email.send_keys(EMAIL)
 
-    # LOGIN BUTTON (important - avoid OTP)
+    # Password
+    password = wait.until(EC.element_to_be_clickable((By.ID, "passwordField")))
+    password.clear()
+    password.send_keys(PASSWORD)
+
+    take_screenshot(driver, "02_filled_credentials")
+
+    # LOGIN BUTTON (avoid OTP)
     login_btn = wait.until(
         EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))
     )
     login_btn.click()
 
-    print("Logging in...")
+    print("[STEP] Logging in...")
     time.sleep(5)
+
+    take_screenshot(driver, "03_after_login")
+    dump_html(driver, "03_after_login")
 
 
 # ==============================
 # UPLOAD RESUME
 # ==============================
 def upload_resume(driver, wait, resume_path):
-    print("Opening profile page...")
+    print("[STEP] Opening profile page")
     driver.get("https://www.naukri.com/mnjuser/profile")
 
-    upload_input = wait.until(
+    time.sleep(5)
+    take_screenshot(driver, "04_profile_page")
+    dump_html(driver, "04_profile_page")
+
+    upload = wait.until(
         EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
     )
 
-    upload_input.send_keys(os.path.abspath(resume_path))
-    print("Resume uploaded successfully")
+    upload.send_keys(os.path.abspath(resume_path))
+    print("[STEP] Resume uploaded")
 
     time.sleep(5)
+    take_screenshot(driver, "05_uploaded")
+    dump_html(driver, "05_uploaded")
 
 
 # ==============================
-# MAIN FUNCTION
+# MAIN FLOW
 # ==============================
 def upload_to_naukri(resume_path):
     driver = get_driver()
-    wait = WebDriverWait(driver, 25)
+    wait = WebDriverWait(driver, 30)
 
     try:
         login(driver, wait)
         upload_resume(driver, wait, resume_path)
 
     except Exception as e:
-        print("ERROR:", e)
+        print("[ERROR]", e)
+        take_screenshot(driver, "ERROR")
+        dump_html(driver, "ERROR")
 
     finally:
         driver.quit()
-        print("Browser closed")
+        print("[INFO] Browser closed")
 
 
 # ==============================
 # RUN
 # ==============================
 if __name__ == "__main__":
-    print("===== Naukri Automation Started =====")
+    print("===== START =====")
 
+    ensure_dirs()
     resume_path = generate_resume()
     upload_to_naukri(resume_path)
 
-    print("===== Process Completed =====")
+    print("===== DONE =====")
