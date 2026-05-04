@@ -1,194 +1,165 @@
 import os
-import shutil
 import time
-from datetime import datetime
-
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 
-# ==============================
+# =========================
 # CONFIG
-# ==============================
-EMAIL = os.getenv("NAUKRI_EMAIL") 
-PASSWORD = os.getenv("NAUKRI_PASSWORD") 
+# =========================
+EMAIL = os.getenv("NAUKRI_EMAIL", "your_email@example.com")
+PASSWORD = os.getenv("NAUKRI_PASSWORD", "your_password")
 
-SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
-DEST_FOLDER = "Naukri_resume"
-RESUME_PREFIX = "Purushottam_Kumar_Resume"
+RESUME_PATH = os.path.abspath(
+    "Naukri_resume/Purushottam_Kumar_Resume_04_May_2026.pdf"
+)
 
-SCREENSHOT_DIR = "screenshots"
-HTML_DIR = "html_dump"
+LOGIN_URL = "https://www.naukri.com/nlogin/login"
 
-
-# ==============================
-# UTILS
-# ==============================
-def ensure_dirs():
-    os.makedirs(DEST_FOLDER, exist_ok=True)
-    os.makedirs(SCREENSHOT_DIR, exist_ok=True)
-    os.makedirs(HTML_DIR, exist_ok=True)
-
-
-def ss(driver, name):
-    path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
-    driver.save_screenshot(path)
-    print(f"[SS] {path}")
-
-
-def html(driver, name):
-    path = os.path.join(HTML_DIR, f"{name}.html")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(driver.page_source)
-
-
-# ==============================
-# RESUME
-# ==============================
-def generate_resume():
-    ensure_dirs()
-
-    date = datetime.now().strftime("%d_%b_%Y")
-    new_file = f"{RESUME_PREFIX}_{date}.pdf"
-    path = os.path.join(DEST_FOLDER, new_file)
-
-    if os.path.exists(path):
-        os.remove(path)
-
-    shutil.copy2(SOURCE_RESUME, path)
-    print("[INFO] Resume ready:", path)
-    return path
-
-
-# ==============================
-# DRIVER (IMPORTANT FIX HERE)
-# ==============================
-def get_driver():
-    options = Options()
-
-    # ⚠️ REMOVE HEADLESS (FIX FOR YOUR ISSUE)
-    # options.add_argument("--headless")
-
-    options.set_preference("dom.webdriver.enabled", False)
-    options.set_preference("useAutomationExtension", False)
-
-    options.set_preference(
-        "general.useragent.override",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0"
-    )
-
+# =========================
+# DRIVER SETUP (FIREFOX)
+# =========================
+def start_driver():
     print("[INFO] Launching Firefox...")
-    driver = webdriver.Firefox(service=Service(), options=options)
-    driver.maximize_window()
 
+    options = Options()
+    options.add_argument("--start-maximized")
+
+    service = Service()  # geckodriver must be in PATH
+    driver = webdriver.Firefox(service=service, options=options)
+
+    driver.implicitly_wait(5)
     return driver
 
 
-# ==============================
-# LOGIN FIXED (IMPORTANT PART)
-# ==============================
-def login(driver, wait):
+# =========================
+# LOGIN FUNCTION
+# =========================
+def login(driver):
+    wait = WebDriverWait(driver, 20)
+
     print("[STEP] Opening login page")
+    driver.get(LOGIN_URL)
 
-    driver.get("https://www.naukri.com/nlogin/login")
-
-    time.sleep(5)  # allow full JS load
-
-    ss(driver, "login_page")
-    html(driver, "login_page")
-
-    # EMAIL
-    email = wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
-    email.clear()
-    email.send_keys(EMAIL)
-
-    time.sleep(1)
-
-    # PASSWORD
-    pwd = wait.until(EC.presence_of_element_located((By.ID, "passwordField")))
-    pwd.clear()
-    pwd.send_keys(PASSWORD)
-
-    ss(driver, "filled_credentials")
-
-    time.sleep(2)
-
-    # LOGIN BUTTON (FIX: JS CLICK SAFE)
-    try:
-        btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']")))
-        driver.execute_script("arguments[0].click();", btn)
-    except:
-        pwd.send_keys(Keys.RETURN)
-
-    print("[STEP] Login clicked")
-
-    time.sleep(8)
-
-    ss(driver, "after_login")
-    html(driver, "after_login")
-
-
-# ==============================
-# UPLOAD
-# ==============================
-def upload_resume(driver, wait, resume_path):
-    print("[STEP] Opening profile")
-
-    driver.get("https://www.naukri.com/mnjuser/profile")
-
-    time.sleep(6)
-
-    ss(driver, "profile")
-    html(driver, "profile")
-
-    upload = wait.until(
-        EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
+    # Email input
+    email_box = wait.until(
+        EC.presence_of_element_located((By.ID, "usernameField"))
     )
+    email_box.clear()
+    email_box.send_keys(EMAIL)
 
-    upload.send_keys(os.path.abspath(resume_path))
+    # Password input
+    pass_box = driver.find_element(By.ID, "passwordField")
+    pass_box.clear()
+    pass_box.send_keys(PASSWORD)
 
-    print("[STEP] Resume uploaded")
+    print("[INFO] Credentials entered")
+
+    # =========================
+    # LOGIN BUTTON FIX (your selector included)
+    # =========================
+    try:
+        login_btn = wait.until(
+            EC.element_to_be_clickable(
+                (By.CSS_SELECTOR, "button[class='btn-primary loginButton']")
+            )
+        )
+        print("[INFO] Using primary login button selector")
+    except:
+        print("[WARN] Primary login button not found, trying fallback")
+
+        login_btn = wait.until(
+            EC.element_to_be_clickable(
+                (By.CSS_SELECTOR, "button.waves-effect, button[type='submit']")
+            )
+        )
+
+    driver.execute_script("arguments[0].click();", login_btn)
+    print("[SUCCESS] Login button clicked")
 
     time.sleep(5)
 
-    ss(driver, "uploaded")
-    html(driver, "uploaded")
+
+# =========================
+# AVOID OTP SCREEN
+# =========================
+def handle_otp_or_skip(driver):
+    try:
+        if "otp" in driver.page_source.lower():
+            print("[INFO] OTP page detected — please complete manually")
+            input("Press ENTER after completing OTP...")
+    except:
+        pass
 
 
-# ==============================
-# MAIN
-# ==============================
-def run():
-    driver = get_driver()
-    wait = WebDriverWait(driver, 30)
+# =========================
+# RESUME UPLOAD (BASIC FLOW)
+# =========================
+def upload_resume(driver):
+    wait = WebDriverWait(driver, 20)
+
+    print("[STEP] Navigating to profile")
+
+    driver.get("https://www.naukri.com/mnjuser/profile")
 
     try:
-        resume = generate_resume()
+        upload_btn = wait.until(
+            EC.presence_of_element_located(
+                (By.XPATH, "//input[@type='file']")
+            )
+        )
 
-        login(driver, wait)
-        upload_resume(driver, wait, resume)
-
-        print("✅ SUCCESS")
+        upload_btn.send_keys(RESUME_PATH)
+        print("[SUCCESS] Resume uploaded")
 
     except Exception as e:
-        print("❌ ERROR:", e)
-        ss(driver, "ERROR")
-        html(driver, "ERROR")
+        print("[ERROR] Resume upload failed:", e)
+
+
+# =========================
+# SCREENSHOT HELPER
+# =========================
+def screenshot(driver, name):
+    os.makedirs("screenshots", exist_ok=True)
+    path = f"screenshots/{name}.png"
+    driver.save_screenshot(path)
+    print(f"[SS] Saved: {path}")
+
+
+# =========================
+# MAIN RUNNER
+# =========================
+def run():
+    print("===== START =====")
+
+    driver = start_driver()
+
+    try:
+        screenshot(driver, "login_page")
+
+        login(driver)
+        screenshot(driver, "after_login")
+
+        handle_otp_or_skip(driver)
+
+        upload_resume(driver)
+        screenshot(driver, "final")
+
+        print("[DONE] Automation complete")
+
+    except Exception as e:
+        print("[FATAL ERROR]", e)
+        screenshot(driver, "error")
 
     finally:
+        print("[EXIT] Closing driver")
+        time.sleep(3)
         driver.quit()
-        print("[INFO] Closed")
 
 
-# ==============================
-# START
-# ==============================
 if __name__ == "__main__":
-    print("===== START =====")
     run()
-    print("===== DONE =====")
