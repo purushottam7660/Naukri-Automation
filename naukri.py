@@ -1,180 +1,144 @@
 import os
+import shutil
 import time
-import logging
 from datetime import datetime
+import os
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+# ==============================
+# USER CONFIGURATION
+# ==============================
 
-# =========================
-# CONFIG
-# =========================
-EMAIL = os.getenv("NAUKRI_EMAIL", "your_email_here")
-PASSWORD = os.getenv("NAUKRI_PASSWORD", "your_password_here")
+# EMAIL = os.getenv("NAUKRI_EMAIL")
+# PASSWORD = os.getenv("NAUKRI_PASSWORD")
 
-BASE_URL = "https://www.naukri.com/nlogin/login"
-SUCCESS_URL = "https://www.naukri.com/mnjuser/"
+EMAIL = "purushottam7660@gmail.com"
+PASSWORD = "3911Pp@#"
 
-SCREENSHOT_DIR = "screenshots"
-os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+SOURCE_RESUME = "Purushottam_Kumar_CV.pdf"
+DEST_FOLDER = "Naukri_resume"
+RESUME_PREFIX = "Purushottam_Kumar_Resume"
 
+# ==============================
+# FUNCTION: Generate Resume
+# ==============================
+def generate_resume():
+    os.makedirs(DEST_FOLDER, exist_ok=True)
 
-# =========================
-# LOGGING
-# =========================
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+    current_date = datetime.now().strftime("%d_%b_%Y")
+    new_filename = f"{RESUME_PREFIX}_{current_date}.pdf"
+    destination_path = os.path.join(DEST_FOLDER, new_filename)
 
+    if os.path.exists(destination_path):
+        os.remove(destination_path)
+        print("Old resume replaced")
 
-# =========================
-# SAFE SCREENSHOT
-# =========================
-def ss(driver, name):
-    try:
-        path = os.path.join(
-            SCREENSHOT_DIR,
-            f"{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-        )
-        driver.save_screenshot(path)
-        logging.info(f"[SS] {path}")
-    except:
-        pass
+    shutil.copy2(SOURCE_RESUME, destination_path)
+    print(f"Resume ready: {destination_path}")
 
+    return destination_path
 
-# =========================
-# DRIVER
-# =========================
+# ==============================
+# FUNCTION: Setup Chrome Driver
+# ==============================
 def get_driver():
-    options = Options()
+    chrome_options = Options()
 
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--window-size=1920,1080")
+    # ✅ STABLE headless mode (fix crash)
+    chrome_options.add_argument("--headless=old")
 
-    driver = webdriver.Chrome(options=options)
-    driver.set_page_load_timeout(60)
+    # ✅ Stability (VERY IMPORTANT)
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-extensions")
 
+    # Prevent crash
+    chrome_options.add_argument("--remote-debugging-port=9222")
+
+    # Required window size
+    chrome_options.add_argument("--window-size=1920,1080")
+
+    # Reduce detection
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+
+    # Fake user-agent (important for Naukri)
+    chrome_options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
+
+    print("Launching Chrome...")
+
+    service = Service()
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+
+    print("Chrome launched successfully")
     return driver
 
-
-# =========================
-# SAFE PAGE LOAD
-# =========================
-def open_login_page(driver):
-    driver.get(BASE_URL)
-    time.sleep(30)
-    ss(driver, "01_page_loaded")
-
-    # validate correct page
-    if "nlogin" not in driver.current_url:
-        raise Exception(f"Wrong page loaded: {driver.current_url}")
-
-
-# =========================
-# WAIT FOR FORM
-# =========================
-def wait_for_form(driver, wait):
-    try:
-        wait.until(EC.presence_of_element_located((By.ID, "loginForm")))
-        wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
-        return True
-    except:
-        ss(driver, "form_not_found")
-        return False
-
-
-# =========================
-# LOGIN ATTEMPT
-# =========================
-def login_attempt(driver, wait, attempt):
-    logging.info(f"===== ATTEMPT {attempt} =====")
-
-    # STEP 1 - OPEN PAGE
-    open_login_page(driver)
-
-    ok = wait_for_form(driver, wait)
-    if not ok:
-        raise Exception("Login form not loaded (possible captcha/block)")
-
-    time.sleep(30)
-
-    # STEP 2 - EMAIL
-    email = wait.until(
-        EC.presence_of_element_located((By.ID, "usernameField"))
-    )
-    email.clear()
-    email.send_keys(EMAIL)
-
-    ss(driver, f"attempt_{attempt}_email")
-    time.sleep(30)
-
-    # STEP 3 - PASSWORD
-    pwd = driver.find_element(By.ID, "passwordField")
-    pwd.clear()
-    pwd.send_keys(PASSWORD)
-
-    ss(driver, f"attempt_{attempt}_password")
-    time.sleep(30)
-
-    # STEP 4 - CLICK LOGIN
-    btn = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Login')]"))
-    )
-    btn.click()
-
-    ss(driver, f"attempt_{attempt}_clicked")
-    time.sleep(30)
-
-    return driver.current_url
-
-
-# =========================
-# MAIN LOOP (5 RETRIES)
-# =========================
-def run():
+# ==============================
+# FUNCTION: Upload Resume
+# ==============================
+def upload_to_naukri(resume_path):
     driver = get_driver()
-    wait = WebDriverWait(driver, 30)
+    wait = WebDriverWait(driver, 20)
 
     try:
-        for i in range(1, 6):
+        print("Opening Naukri login...")
 
-            try:
-                url = login_attempt(driver, wait, i)
+        driver.get("https://www.naukri.com/nlogin/login")
 
-                logging.info(f"URL: {url}")
-                ss(driver, f"attempt_{i}_final")
+        # Wait for login page
+        wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
 
-                if SUCCESS_URL in url:
-                    logging.info("LOGIN SUCCESS 🎉")
-                    ss(driver, "SUCCESS")
-                    return
+        # Enter email
+        driver.find_element(By.ID, "usernameField").send_keys(EMAIL)
 
-            except Exception as e:
-                logging.error(f"Attempt {i} failed: {e}")
-                ss(driver, f"attempt_{i}_error")
+        # Enter password
+        password_field = driver.find_element(By.ID, "passwordField")
+        password_field.send_keys(PASSWORD)
+        password_field.send_keys(Keys.RETURN)
 
-            time.sleep(30)
+        print("Logging in...")
+        time.sleep(5)
 
-        logging.error("LOGIN FAILED after 5 attempts")
+        # Open profile page
+        driver.get("https://www.naukri.com/mnjuser/profile")
+
+        # Wait for upload input
+        upload_input = wait.until(
+            EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
+        )
+
+        # Upload resume
+        upload_input.send_keys(resume_path)
+
+        print("✅ Resume uploaded successfully!")
+
+        time.sleep(5)
+
+    except Exception as e:
+        print("❌ Error:", e)
 
     finally:
-        try:
-            driver.quit()
-        except:
-            pass
+        driver.quit()
+        print("Browser closed")
 
-        logging.info("Driver closed")
-
-
-# =========================
-# START
-# =========================
+# ==============================
+# MAIN
+# ==============================
 if __name__ == "__main__":
-    run()
+    print("===== Naukri Automation Started =====")
+
+    resume_path = generate_resume()
+    upload_to_naukri(resume_path)
+
+    print("===== Process Completed =====")
