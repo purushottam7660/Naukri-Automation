@@ -2,6 +2,7 @@ import os
 import shutil
 import time
 import random
+import sys
 from datetime import datetime
 
 from selenium import webdriver
@@ -11,6 +12,12 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
+
+# ==============================
+# FIX: UTF-8 console support
+# ==============================
+sys.stdout.reconfigure(encoding='utf-8')
 
 
 # ==============================
@@ -39,7 +46,7 @@ def ensure_dirs():
 def ss(driver, name):
     path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
     driver.save_screenshot(path)
-    print(f"[SS] {path}")
+    print("[SS]", path)
 
 
 def html(driver, name):
@@ -71,43 +78,60 @@ def generate_resume():
 
 
 # ==============================
-# DRIVER (GITHUB FIX)
+# DRIVER (GITHUB SAFE)
 # ==============================
 def get_driver():
     options = Options()
 
-    # 🔥 REQUIRED FOR GITHUB ACTIONS
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
 
-    options.add_argument("--disable-blink-features=AutomationControlled")
-
-    print("[INFO] Launching Chrome (GitHub-safe headless)...")
+    print("[INFO] Starting Chrome headless")
 
     driver = webdriver.Chrome(service=Service(), options=options)
-
     driver.set_page_load_timeout(120)
 
     return driver
 
 
 # ==============================
-# LOGIN
+# SAFE PAGE OPEN
+# ==============================
+def safe_open(driver):
+    driver.get("https://www.naukri.com")
+    time.sleep(5)
+    driver.get("https://www.naukri.com/nlogin/login")
+    time.sleep(5)
+
+
+# ==============================
+# LOGIN (FIXED)
 # ==============================
 def login(driver, wait):
-    print("[STEP] Opening login page")
+    print("[STEP] Login started")
 
-    driver.get("https://www.naukri.com/nlogin/login")
-    human_delay(3, 6)
+    safe_open(driver)
 
-    email = wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
+    driver.save_screenshot("login_page.png")
+
+    try:
+        email = wait.until(
+            EC.visibility_of_element_located((By.ID, "usernameField"))
+        )
+    except:
+        driver.save_screenshot("login_failed.png")
+        raise Exception("Login page not loaded or blocked by Naukri")
+
     email.clear()
     email.send_keys(EMAIL)
 
-    pwd = wait.until(EC.presence_of_element_located((By.ID, "passwordField")))
+    pwd = wait.until(
+        EC.visibility_of_element_located((By.ID, "passwordField"))
+    )
+
     pwd.clear()
     pwd.send_keys(PASSWORD)
 
@@ -120,17 +144,17 @@ def login(driver, wait):
     btn.click()
 
     print("[INFO] Login submitted")
-    human_delay(8, 12)
+    time.sleep(10)
 
 
 # ==============================
-# UPLOAD
+# UPLOAD RESUME
 # ==============================
 def upload_resume(driver, wait, resume_path):
-    print("[STEP] Opening profile page")
+    print("[STEP] Uploading resume")
 
     driver.get("https://www.naukri.com/mnjuser/profile")
-    human_delay(5, 7)
+    time.sleep(6)
 
     upload = wait.until(
         EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
@@ -138,8 +162,8 @@ def upload_resume(driver, wait, resume_path):
 
     upload.send_keys(os.path.abspath(resume_path))
 
-    print("[STEP] Resume uploaded")
-    human_delay(5, 7)
+    print("[INFO] Resume uploaded")
+    time.sleep(5)
 
 
 # ==============================
@@ -152,21 +176,19 @@ def run():
     try:
         resume = generate_resume()
 
-        driver.get("https://www.google.com")  # warm-up (prevents timeout crash)
-
         login(driver, wait)
         upload_resume(driver, wait, resume)
 
-        print("✅ SUCCESS")
+        print("[SUCCESS] Automation completed")
 
     except Exception as e:
-        print("❌ ERROR:", e)
+        print("[ERROR]", str(e))
         ss(driver, "error")
         html(driver, "error")
 
     finally:
         driver.quit()
-        print("[INFO] Closed")
+        print("[INFO] Browser closed")
 
 
 # ==============================
