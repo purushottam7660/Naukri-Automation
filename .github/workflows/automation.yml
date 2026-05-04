@@ -16,41 +16,28 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
-        shell: powershell
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Check Chrome version
-        shell: powershell
-        run: |
-          $chrome = "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe"
-          if (!(Test-Path $chrome)) {
-            $chrome = "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe"
-          }
-
-          if (!(Test-Path $chrome)) {
-            Write-Error "Chrome not found"
-            exit 1
-          }
-
-          & $chrome --version
 
       - name: Remove old chromedriver
         shell: powershell
         run: |
           Remove-Item "C:\SeleniumWebDrivers\ChromeDriver\chromedriver.exe" -ErrorAction SilentlyContinue
 
-      - name: Run Automation Script
+      - name: Show Chrome version
         shell: powershell
+        run: |
+          Get-Item "C:\Program Files\Google\Chrome\Application\chrome.exe" | Select-Object Name
+
+      - name: Run Automation
         env:
           NAUKRI_EMAIL: ${{ secrets.NAUKRI_EMAIL }}
           NAUKRI_PASSWORD: ${{ secrets.NAUKRI_PASSWORD }}
-        run: |
-          python naukri.py
+        run: python naukri.py
 
       - name: Upload Debug Files
         if: always()
