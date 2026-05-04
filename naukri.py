@@ -109,7 +109,7 @@ class NaukriBot:
         options.add_argument("--disable-notifications")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-popup-blocking")
-        options.add_argument("--headless=new")
+        # options.add_argument("--headless=new")
 
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
 
@@ -127,7 +127,7 @@ class NaukriBot:
         if not self.username or not self.password:
             raise Exception("Missing NAUKRI_EMAIL or NAUKRI_PASSWORD")
 
-        wait = WebDriverWait(self.driver, 30)
+        wait = WebDriverWait(self.driver, 100)
 
         try:
             logger.info("Logging in...")
@@ -146,7 +146,7 @@ class NaukriBot:
 
             password.send_keys(Keys.ENTER)
 
-            time.sleep(10)
+            time.sleep(100)
 
             take_screenshot(self.driver, "04_after_login")
 
@@ -173,7 +173,7 @@ class NaukriBot:
 
             take_screenshot(self.driver, "05_profile_page")
 
-            upload = WebDriverWait(self.driver, 30).until(
+            upload = WebDriverWait(self.driver, 100).until(
                 EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
             )
 
