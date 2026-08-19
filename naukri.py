@@ -89,9 +89,23 @@ def get_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
 
-    print("[INFO] Starting Chrome headless")
+    # ==============================
+    # SPECIFIC CHROME PROFILE
+    # ==============================
+    CHROME_USER_DATA = os.path.abspath("chrome_profile")
+    CHROME_PROFILE = "Default"
 
-    driver = webdriver.Chrome(service=Service(), options=options)
+    options.add_argument(f"--user-data-dir={CHROME_USER_DATA}")
+    options.add_argument(f"--profile-directory={CHROME_PROFILE}")
+
+    print("[INFO] Chrome profile:", CHROME_USER_DATA)
+    print("[INFO] Chrome profile directory:", CHROME_PROFILE)
+
+    driver = webdriver.Chrome(
+        service=Service(),
+        options=options
+    )
+
     driver.set_page_load_timeout(120)
 
     return driver
