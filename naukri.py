@@ -97,6 +97,13 @@ def get_driver():
 
     options.add_argument(f"--user-data-dir={CHROME_USER_DATA}")
     options.add_argument(f"--profile-directory={CHROME_PROFILE}")
+    USER_AGENT = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/152.0.0.0 Safari/537.36"
+    )
+
+    options.add_argument(f"--user-agent={USER_AGENT}")
 
     print("[INFO] Chrome profile:", CHROME_USER_DATA)
     print("[INFO] Chrome profile directory:", CHROME_PROFILE)
