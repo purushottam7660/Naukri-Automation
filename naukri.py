@@ -93,7 +93,7 @@ def get_driver():
     # SPECIFIC CHROME PROFILE
     # ==============================
     CHROME_USER_DATA = os.path.abspath("chrome_profile")
-    CHROME_PROFILE = "Default"
+    CHROME_PROFILE = "Profile 5"
 
     options.add_argument(f"--user-data-dir={CHROME_USER_DATA}")
     options.add_argument(f"--profile-directory={CHROME_PROFILE}")
