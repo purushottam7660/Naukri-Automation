@@ -35,11 +35,28 @@ jobs:
           pip install selenium
 
       # ==========================
-      # Install Chrome (IMPORTANT FIX)
+      # Check Chrome
       # ==========================
-      - name: Install Chrome
+      - name: Check Chrome
+        shell: powershell
         run: |
-          choco install googlechrome -y
+          $chromePaths = @(
+            "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+            "${env:LOCALAPPDATA}\Google\Chrome\Application\chrome.exe"
+          )
+
+          $chrome = $chromePaths | Where-Object {
+            Test-Path $_
+          } | Select-Object -First 1
+
+          if (-not $chrome) {
+            Write-Error "Chrome not found"
+            exit 1
+          }
+
+          Write-Host "Chrome found at: $chrome"
+          & $chrome --version
 
       # ==========================
       # Create folders
@@ -50,6 +67,7 @@ jobs:
           New-Item -ItemType Directory -Force screenshots
           New-Item -ItemType Directory -Force html_dump
           New-Item -ItemType Directory -Force Naukri_resume
+          New-Item -ItemType Directory -Force chrome_profile
 
       # ==========================
       # Run script
@@ -72,4 +90,5 @@ jobs:
             screenshots/
             html_dump/
             Naukri_resume/
+            chrome_profile/
             naukri.log
